@@ -21,14 +21,6 @@ conda activate reverse_ligq
 chmod +x compound_test.py
 ```
 
-## Graphic interface (using Streamlit)
-
-Run with the following lines
-```sh
-conda activate reverse_ligq
-streamlit run lq_rev.py
-```
-
 
 ## General information
 The query (input) ligand structure must be in SMILES format.
@@ -44,6 +36,16 @@ The output consists of 3 files:
 3. similar_compound_search.xlsx: shows 2D chemical structures, Tanimoto Similarity with the query ligand and known binding domains of the compounds obtained in the similarity search.
 
 ## Usage
+
+## Graphic interface (using Streamlit)
+
+Run with the following lines
+```sh
+conda activate reverse_ligq
+streamlit run lq_rev.py
+```
+
+## Command line interface
 Please use the help command first for details about the organisms included in the databases, their respective reference numbers and detailed info about other parameters:
 ```sh
 ./compound_test.py -h
