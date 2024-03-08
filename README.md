@@ -10,12 +10,12 @@ Anaconda is required to build the environment with the necessary packages in ord
 ## Installation
 1. Clone the repository in the desired directory:
 ```sh
-git clone https://gitlab.com/gustavoschottlender/reverse-ligq.git
+git clone https://github.com/gschottlender/ReverseLigQ.git
 ```
 2. In the directory where the repository is cloned, create the environment from the .yml file provided to run the program and activate it:
 
 ```sh
-conda env create -f reverse_ligq.yml -n reverse_ligq
+conda env create -f environment.yml -n reverse_ligq
 conda activate reverse_ligq
 ```
 3. Add excecution permission to the script compound_test.py:
