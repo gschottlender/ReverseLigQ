@@ -1,5 +1,7 @@
 # ReverseLigQ
-Retrieves candidate binding targets of pathogenic organisms for a query ligand performing a chemical similarity search of compounds which their binding domains are known.
+Retrieves candidate binding target proteins from various pathogenic organisms, including humans, for a query ligand using an unsupervised learning approach based on a chemical similarity search. This approach identifies candidate target proteins based on compounds with known binding domains.
+
+Detailed information in the corresponding paper: Schottlender, G., Prieto, J. M., Palumbo, M. C., Castello, F. A., Serral, F., Sosa, E. J., et al. (2022). From drugs to targets: reverse engineering the virtual screening process on a proteomic scale. Front. Drug Discov. 2:969983. doi: 10.3389/fddsv.2022.969983
 
 ## Requirements
 Anaconda is required to build the environment with the necessary packages in order to run the program.
