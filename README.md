@@ -37,7 +37,7 @@ The output consists of 3 files:
 
 ## Usage
 
-## Graphic interface (using Streamlit)
+### Graphic interface (using Streamlit)
 
 Run with the following lines
 ```sh
@@ -45,7 +45,7 @@ conda activate reverse_ligq
 streamlit run lq_rev.py
 ```
 
-## Command line interface
+### Command line interface
 Please use the help command first for details about the organisms included in the databases, their respective reference numbers and detailed info about other parameters:
 ```sh
 ./compound_test.py -h
@@ -63,7 +63,7 @@ Changing output files directory (must specify full path of existing directory):
 ./compound_test.py -org 2 -s "CCCCCOCCN" -o /home/username/example-directory/
 ```
 
-## Upload new organisms
+### Upload new organisms
 
 #### script 1_obtain_pfam_domains.py
 
