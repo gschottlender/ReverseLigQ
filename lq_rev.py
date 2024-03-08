@@ -13,15 +13,17 @@ organism_options = list(organisms_dict.keys())
 # Streamlit UI elements
 st.title('Reverse LigQ')
 st.subheader('Unsupervised learning tool for Compound Target Prediction based on chemical similarity')
+st.caption('Provides potential target proteins for a given query compound, prioritized based on their similarity (measured using the Tanimoto Index) to compounds with known binding sites.')
 # Dropdowns for selecting arguments
 st.image('./Scheme.jpg')
+# Info, link al paper
+st.caption("The algorithm information and evaluation are provided in the article. Please cite if applicable:")
+st.link_button('"From drugs to targets: Reverse engineering the virtual screening process on a proteomic scale"', "https://www.frontiersin.org/articles/10.3389/fddsv.2022.969983")
 
 organism = organisms_dict[st.selectbox('Select Organism', organism_options)]
-smiles_inp = st.text_input('Enter compound in SMILES format', 'CCCCCCOCCCCO')
+smiles_inp = st.text_input('Enter query compound in SMILES format', 'CCCCCCOCCCCO')
 threshold = st.number_input('Define the Tanimoto Index threshold', value=0.4)
-# Info
-st.caption("Citation:") 
-st.caption('''Schottlender, G., Prieto, J. M., Palumbo, M. C., Castello, F. A., Serral, F., Sosa, E. J., et al. (2022). From drugs to targets: reverse engineering the virtual screening process on a proteomic scale. Front. Drug Discov. 2:969983. doi: 10.3389/fddsv.2022.969983''')
+
 # Button to trigger the Python script
 if st.button('Run Similarity Search'):
     # Call the Python script with selected arguments
@@ -39,3 +41,5 @@ if st.button('Run Similarity Search'):
     tab1,tab2 = st.tabs(["Candidate Target Results", "Compound Similarity Results"])
     tab1.write(result_df)
     tab2.write(sim_search)
+
+st.page_link("https://github.com/gschottlender/ReverseLigQ",label=':blue[Link to GitHub repository]')
