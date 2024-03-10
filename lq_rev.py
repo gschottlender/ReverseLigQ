@@ -16,16 +16,13 @@ st.subheader('Unsupervised learning tool for Compound Target Prediction based on
 st.caption('Provides potential target proteins for a given query compound, prioritized based on their similarity (measured using the Tanimoto Index) to compounds with known binding sites.')
 # Dropdowns for selecting arguments
 st.image('./Scheme.jpg')
-# Info, link al paper
-st.caption("The algorithm information and evaluation are provided in the article. Please cite if applicable:")
-st.link_button('"From drugs to targets: Reverse engineering the virtual screening process on a proteomic scale"', "https://www.frontiersin.org/articles/10.3389/fddsv.2022.969983")
 
 organism = organisms_dict[st.selectbox('Select Organism', organism_options)]
 smiles_inp = st.text_input('Enter query compound in SMILES format', 'CCCCCCOCCCCO')
-threshold = st.number_input('Define the Tanimoto Index threshold', value=0.4)
+threshold = st.number_input('Define the Tanimoto Index threshold (from 0.2 to 1.0, higher values correspond to more similar compounds)', value=0.5,min_value=0.2,max_value=1.0)
 
 # Button to trigger the Python script
-if st.button('Run Similarity Search'):
+if st.button('Run Candidate Target Search'):
     # Call the Python script with selected arguments
     command = ['python3', 'compound_test.py', '-org', str(organism), '-s', smiles_inp,'-t',str(threshold)]
 
@@ -41,5 +38,6 @@ if st.button('Run Similarity Search'):
     tab1,tab2 = st.tabs(["Candidate Target Results", "Compound Similarity Results"])
     tab1.write(result_df)
     tab2.write(sim_search)
-
-st.page_link("https://github.com/gschottlender/ReverseLigQ",label=':blue[Link to GitHub repository]')
+st.caption("Algorithm detailed information and evaluation are provided in the article:")
+st.markdown(f" [From drugs to targets: Reverse engineering the virtual screening process on a proteomic scale](https://www.frontiersin.org/articles/10.3389/fddsv.2022.969983): Schottlender G, Prieto JM, Palumbo MC, Castello FA, Serral F, Sosa EJ, Turjanski AG, Martì MA and Fernández Do Porto D")
+st.markdown(f"[GitHub site](https://github.com/gschottlender/ReverseLigQ)")
