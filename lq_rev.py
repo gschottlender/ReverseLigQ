@@ -20,6 +20,7 @@ st.image('./Scheme.jpg')
 organism = organisms_dict[st.selectbox('Select Organism', organism_options)]
 smiles_inp = st.text_input('Enter query compound in SMILES format', 'CCCCCCOCCCCO')
 threshold = st.number_input('Define the Tanimoto Index threshold (from 0.2 to 1.0, higher values correspond to more similar compounds)', value=0.5,min_value=0.2,max_value=1.0)
+only_description = st.selectbox("Only show proteins with description:", ("Yes", "No"))
 
 # Button to trigger the Python script
 if st.button('Run Candidate Target Search'):
@@ -30,10 +31,11 @@ if st.button('Run Candidate Target Search'):
     
     # Open result
     result_df = pd.read_csv('candidate_targets_full_result.csv')
+    if only_description == 'Yes':
+        result_df = result_df.loc[result_df['Description'] != '-']
+    
     sim_search = pd.read_excel('similar_compound_search.xlsx', engine='openpyxl')
     sim_search = sim_search.drop(['Unnamed: 0'],axis=1)
-    # Display the DataFrame
-    #st.write(result_df)
 
     tab1,tab2 = st.tabs(["Candidate Target Results", "Compound Similarity Results"])
     tab1.write(result_df)
