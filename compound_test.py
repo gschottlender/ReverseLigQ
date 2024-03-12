@@ -58,8 +58,8 @@ def binding_domain_search(query_compound,fps,dicc_ligandos_familias):
     similaridades_fams_candidatas = {k:similaridades_fams_candidatas[k] for k in sorted(similaridades_fams_candidatas, key=similaridades_fams_candidatas.get, reverse=True)}
 
     PandasTools.AddMoleculeColumnToFrame(results, smilesCol='Smiles')
-    del(results['Smiles'])
-    results = results.reindex(columns=['Compound name','ROMol','Tanimoto Similarity with query','Known Binding Pfam domains'])
+    results['Smiles']
+    results = results.reindex(columns=['Compound name','Smiles','ROMol','Tanimoto Similarity with query','Known Binding Pfam domains'])
     results.rename(columns={'ROMol':'Chemical structure'},inplace = True)
 
     return compuestos_fams, similaridades_fams_candidatas, results
@@ -92,7 +92,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-org","--organism", help="Select organism number: 1- Bartonella bacilliformis, 2- Klebsiella pneumoniae, 3- Mycobacterium tuberculosis, 4- Trypanosoma cruzi, 5- Staphylococcus aureus RF122, 6- Streptococcus uberis 0140J, 7- Enterococcus faecium, 8- Escherichia coli MG1655, 9- Streptococcus agalactiae NEM316, 10- Pseudomonas syringae, 11- DENV (dengue virus), 12- SARS-CoV-2, 13- Xanthomonas translucens",type=int,choices=range(1,15))
+    parser.add_argument("-org","--organism", help="Select organism number: 1- Bartonella bacilliformis, 2- Klebsiella pneumoniae, 3- Mycobacterium tuberculosis, 4- Trypanosoma cruzi, 5- Staphylococcus aureus RF122, 6- Streptococcus uberis 0140J, 7- Enterococcus faecium, 8- Escherichia coli MG1655, 9- Streptococcus agalactiae NEM316, 10- Pseudomonas syringae, 11- DENV (dengue virus), 12- SARS-CoV-2, 13- Homo sapiens",type=int,choices=range(1,15))
     parser.add_argument("--custom_organism",help="Directory with the databases of a new organism")
     parser.add_argument("-s","--smiles_query", help="Paste smiles of the query ligand",required = True,type=str)
     parser.add_argument("-t","--threshold",help='Select T.I. similar compound threshold for candidate domain search',type=float,default=0.4)

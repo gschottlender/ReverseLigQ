@@ -1,6 +1,24 @@
+import base64
+import io
+
 import streamlit as st
 import subprocess
 import pandas as pd
+
+import rdkit
+import rdkit.Chem
+import rdkit.Chem.Draw
+
+def smi_to_png(smi: str) -> str:
+    """Returns molecular image as data URI."""
+    mol = rdkit.Chem.MolFromSmiles(smi)
+    pil_image = rdkit.Chem.Draw.MolToImage(mol)
+
+    with io.BytesIO() as buffer:
+        pil_image.save(buffer, "png")
+        data = base64.encodebytes(buffer.getvalue()).decode("utf-8")
+
+    return f"data:image/png;base64,{data}"
 
 # Options for arguments
 organisms_dict = {'Bartonella bacilliformis':1,'Klebsiella pneumoniae':2,'Mycobacterium tuberculosis':3,'Trypanosoma cruzi':4,
@@ -18,7 +36,7 @@ st.caption('Provides potential target proteins for a given query compound, prior
 st.image('./Scheme.jpg')
 
 organism = organisms_dict[st.selectbox('Select Organism', organism_options)]
-smiles_inp = st.text_input('Enter query compound in SMILES format', 'CCCCCCOCCCCO')
+smiles_inp = st.text_input('Enter query compound in SMILES format', 'CCCCO')
 threshold = st.number_input('Define the Tanimoto Index threshold (from 0.2 to 1.0, higher values correspond to more similar compounds)', value=0.5,min_value=0.2,max_value=1.0)
 only_description = st.selectbox("Only show proteins with description:", ("Yes", "No"))
 
@@ -36,10 +54,12 @@ if st.button('Run Candidate Target Search'):
     
     sim_search = pd.read_excel('similar_compound_search.xlsx', engine='openpyxl')
     sim_search = sim_search.drop(['Unnamed: 0'],axis=1)
-
+    sim_search["Smiles"] = sim_search["Smiles"].apply(smi_to_png)
+    sim_search = sim_search.rename(columns={'Smiles':'Structure (click to enlarge)'})
+    
     tab1,tab2 = st.tabs(["Candidate Target Results", "Compound Similarity Results"])
-    tab1.write(result_df)
-    tab2.write(sim_search)
+    tab1.dataframe(result_df)
+    tab2.dataframe(sim_search,column_config={"Structure (click to enlarge)": st.column_config.ImageColumn()})
 st.caption("Algorithm detailed information and evaluation are provided in the article:")
 st.markdown(f" [From drugs to targets: Reverse engineering the virtual screening process on a proteomic scale](https://www.frontiersin.org/articles/10.3389/fddsv.2022.969983): Schottlender G, Prieto JM, Palumbo MC, Castello FA, Serral F, Sosa EJ, Turjanski AG, Martì MA and Fernández Do Porto D")
 st.markdown(f"[GitHub site](https://github.com/gschottlender/ReverseLigQ)")
