@@ -66,7 +66,7 @@ def binding_domain_search(query_compound,fps,dicc_ligandos_familias):
 
 def results_tables(similaridades_fams_candidatas,dicc_familias,compuestos_fams,protein_descriptions):
     
-    prot_candidatas_ampliadas = pd.DataFrame(columns = ['Pfam','Protein (Uniprot ID)','Description','Most similar Binding-compound Tanimoto Similarity','Domain-binding similar ligands'])
+    prot_candidatas_ampliadas = pd.DataFrame(columns = ['Pfam','Protein (Uniprot ID)','Gene','Description','Most similar Binding-compound Tanimoto Similarity','Domain-binding similar ligands'])
     for f in similaridades_fams_candidatas:
         if f.startswith('('):
             fams = f[1:-1].split(', ')
@@ -74,7 +74,7 @@ def results_tables(similaridades_fams_candidatas,dicc_familias,compuestos_fams,p
             fams = [f]
         for fam in fams:
             for prot in list(dicc_familias.get(fam,'-')):
-                candidatas = pd.DataFrame([{'Pfam':f,'Protein (Uniprot ID)':prot,'Description':protein_descriptions.get(prot,'-'),'Most similar Binding-compound Tanimoto Similarity':round(similaridades_fams_candidatas[f],2),'Domain-binding similar ligands':', '.join(compuestos_fams[f])}])
+                candidatas = pd.DataFrame([{'Pfam':f,'Protein (Uniprot ID)':prot,'Gene':protein_descriptions['gene'].get(prot,'No data'),'Description':protein_descriptions['description'].get(prot,'-'),'Most similar Binding-compound Tanimoto Similarity':round(similaridades_fams_candidatas[f],2),'Domain-binding similar ligands':', '.join(compuestos_fams[f])}])
                 prot_candidatas_ampliadas = pd.concat([prot_candidatas_ampliadas, candidatas], ignore_index=True)
         
     prot_candidatas = prot_candidatas_ampliadas.drop(prot_candidatas_ampliadas[prot_candidatas_ampliadas["Pfam"].str.startswith("(")].index)
