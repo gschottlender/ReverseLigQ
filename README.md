@@ -12,6 +12,7 @@ Anaconda is required to build the environment with the necessary packages in ord
 ```sh
 git clone https://github.com/gschottlender/ReverseLigQ.git
 ```
+### Option 1: install environment locally
 2. In the directory where the repository is cloned, create the environment from the .yml file provided to run the program and activate it:
 
 ```sh
@@ -23,6 +24,11 @@ conda activate reverse_ligq
 chmod +x compound_test.py
 ```
 
+### Option 2: using docker container (for graphic interface)
+2. Build Docker image
+```sh
+docker build -t rev_ligq .
+```
 
 ## General information
 The query (input) ligand structure must be in SMILES format.
@@ -39,15 +45,22 @@ The output consists of 3 files:
 
 ## Usage
 
-### Graphic interface (using Streamlit)
-
+### Graphic interface
+#### Using local environment
 Run with the following lines
 ```sh
 conda activate reverse_ligq
 streamlit run lq_rev.py
 ```
 
-### Command line interface
+#### Running docker container
+1. Run docker container
+```sh
+docker run -p 8000:8000 rev_ligq
+```
+2. Open in the browser [http://localhost:8000/](http://localhost:8000/)
+
+### Command line
 Please use the help command first for details about the organisms included in the databases, their respective reference numbers and detailed info about other parameters:
 ```sh
 ./compound_test.py -h
