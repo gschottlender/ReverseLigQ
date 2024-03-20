@@ -91,7 +91,7 @@ Requirements:
 
 Preprocess PfamA database:
 ```sh
-<pfam_directory>/hmmpress Pfam-A.hmm
+hmmpress <pfam_directory>/Pfam-A.hmm
 ```
 
 Output:
