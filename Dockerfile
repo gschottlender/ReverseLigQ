@@ -21,11 +21,6 @@ EXPOSE 8501
 # Define environment variable
 ENV NAME reverse_ligq
 
-# Make RUN commands use `bash --login`:
-SHELL ["/bin/bash", "--login", "-c"]
-
-# Initialize conda in bash config files:
-RUN conda init bash
-
 # Activate the environment and run the app:
-CMD /bin/bash -c "source activate reverse_ligq && streamlit run rev_lq.py --server.port=8501 --server.address=0.0.0.0"
+CMD ["conda", "run", "-n", "reverse_ligq", "streamlit", "run", "rev_lq.py", "--server.port=8501", "--server.address=0.0.0.0"]
+
