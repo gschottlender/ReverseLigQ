@@ -16,11 +16,11 @@ RUN conda env create -f environment.yml
 COPY . .
 
 # Make port 8501 available to the world outside this container
-EXPOSE 8501
+EXPOSE 8000
 
 # Define environment variable
 ENV NAME reverse_ligq
 
 # Activate the environment and run the app:
-CMD ["conda", "run", "-n", "reverse_ligq", "streamlit", "run", "rev_lq.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["conda", "run", "-n", "reverse_ligq", "streamlit", "run", "rev_lq.py", "--server.port=8000", "--server.address=0.0.0.0"]
 
