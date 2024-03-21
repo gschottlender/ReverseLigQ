@@ -29,6 +29,9 @@ organisms_dict = {'Bartonella bacilliformis':1,'Klebsiella pneumoniae':2,'Mycoba
 organism_options = list(organisms_dict.keys())
 
 # Streamlit UI elements
+st.set_page_config(
+    page_title="ReverseLigQ",
+)
 st.title('Reverse LigQ')
 st.subheader('Unsupervised learning tool for Compound Target Prediction based on chemical similarity')
 st.caption('Provides potential target proteins for a given query compound, prioritized based on their similarity (measured using the Tanimoto Index) to compounds with known binding sites.')
