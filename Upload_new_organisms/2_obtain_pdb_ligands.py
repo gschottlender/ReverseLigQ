@@ -86,7 +86,7 @@ if __name__ == '__main__':
 	parser.add_argument("--moad_db", help="Moad json database path",default='./db/moad/moad.json',type=str)    
     # En lugar de usar este argumento, directamente le estoy pasando la carpeta donde se guardan todos los outputs del organismo, donde está el input para este script
     #parser.add_argument("-i","--pfam_proteins_input",help="Database of the organism's proteins grouped by pfam domains (output from script obtain_pfam_domains.py) file path",default = './db/fam_prot_dict.pkl',type=str)
-	parser.add_argument("-o","--organism_folder",help='Folder where results for the same organism are saved',required=True,default='./db',type=str)
+	parser.add_argument("-org","--organism_folder",help='Folder where results for the same organism are saved',required=True,default='./db',type=str)
     #parser.add_argument("--evalue_limit",help='Higher e-value of each hit for assigning proteins to a Pfam family',default=1e-5,type=float)
 	args = parser.parse_args()
 

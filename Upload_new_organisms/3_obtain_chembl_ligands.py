@@ -85,7 +85,7 @@ if __name__ == '__main__':
     
 	parser = argparse.ArgumentParser()
 
-	parser.add_argument("-o","--organism_folder",help='Folder where results for the same organism are saved',required=True,type=str)  
+	parser.add_argument("-org","--organism_folder",help='Folder where results for the same organism are saved',required=True,type=str)  
 	parser.add_argument("-cdb","--chembl_database",help='Path where local ChEMBL db is located',default='./db/chembl/chembl_31.db',type=str)
 	parser.add_argument("-tdb","--db_chembl_targets",help='Directory where ChEMBL target - pfam database is located',required = True,type=str)
 	
