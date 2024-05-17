@@ -25,7 +25,7 @@ if __name__ == '__main__':
         
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-o","--organism_folder",help='Folder where results for the same organism are saved, and where ChEMBL and PDB databases from the organism are located',required=True,type=str)  
+    parser.add_argument("-org","--organism_folder",help='Folder where results for the same organism are saved, and where ChEMBL and PDB databases from the organism are located',required=True,type=str)  
 
 		    
     args = parser.parse_args()

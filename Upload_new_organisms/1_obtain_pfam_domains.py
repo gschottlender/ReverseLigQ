@@ -27,7 +27,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--pfam_db", help="Pfam database .hmm path",required = True,type=str)    
     parser.add_argument("-i","--proteome_input",help='Organism proteome .fasta file path',required = True,type=str)
-    parser.add_argument("-o","--organism_folder",help='Folder where results for the same organism are saved',required=True,type=str)
+    parser.add_argument("-org","--organism_folder",help='Folder where results for the same organism are saved',required=True,type=str)
     #parser.add_argument("--evalue_limit",help='Higher e-value of each hit for assigning proteins to a Pfam family',default=1e-5,type=float)
     args = parser.parse_args()
 
