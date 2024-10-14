@@ -58,7 +58,7 @@ if st.button('Run Candidate Target Search'):
     sim_search = sim_search.rename(columns={'Smiles':'Structure (click to enlarge)'})
     
     tab1,tab2 = st.tabs(["Candidate Target Results", "Compound Similarity Results"])
-    tab1.dataframe(result_df,sep=',')
+    tab1.dataframe(result_df)
     tab2.dataframe(sim_search,column_config={"Structure (click to enlarge)": st.column_config.ImageColumn()})
 st.caption("Algorithm detailed information and evaluation are provided in the article:")
 st.markdown(f" [From drugs to targets: Reverse engineering the virtual screening process on a proteomic scale](https://www.frontiersin.org/articles/10.3389/fddsv.2022.969983): Schottlender G, Prieto JM, Palumbo MC, Castello FA, Serral F, Sosa EJ, Turjanski AG, Martì MA and Fernández Do Porto D")
