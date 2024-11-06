@@ -2,9 +2,9 @@ import requests
 
 from collections import defaultdict
 
-from MOAD_PDBIND.filter_MOAD import filter_ligands
-from ligand_from_pfam.domain_pdb_ligand import ligands_from_domain
-from extracts.extract_ligand_from_pdb import ligands_from_pdb, pdb_ligands_mapping
+from filter_MOAD import filter_ligands
+from domain_pdb_ligand import ligands_from_domain
+from extract_ligand_from_pdb import ligands_from_pdb, pdb_ligands_mapping
 
 from rdkit import Chem
 
