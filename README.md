@@ -78,16 +78,19 @@ Changing output files directory (must specify full path of existing directory):
 ./compound_test.py -org 2 -s "CCCCCOCCN" -o /home/username/example-directory/
 ```
 
-### Upload new organisms (command-line only; not available in the Graphic interface).
+### Add new organisms (command-line only; not available in the Graphic interface).
+
+The process is divided into 5 steps to generate the necessary databases. Each step has its own requirements, which are detailed in the corresponding section.
 
 #### script 1_obtain_pfam_domains.py
 
 Obtains protein domains in Pfam from a proteome and generates the corresponding protein database grouped by their domains.
 
 Requirements: 
-- The proteome of the bacterium.
+- The proteome of the organism.
 - Local hmm database PfamA.
 - Hmmer installed in the environment.
+- Directory in which the databases are saved (specified with the -o argument).
 
 Preprocess PfamA database:
 ```sh
@@ -162,11 +165,22 @@ Usage:
 Combines the curated PDB and ChEMBL databases.
 
 Requirements:
-- PDB and ChEMBL databases are built.
+- PDB and ChEMBL databases of the custom organism.
 
 Usage:
 
 ```sh
 5_combine_dbs.py -o organism_name
 ```
+
+#### Perform predictions on a custom organism
+
+Usage example:
+
+Performs the prediction for a custom organsim and switches the Tanimoto Similarity threshold to a desired one (0.3 in this example):
+
+```sh
+./compound_test.py --custom_organism <custom_organism_directory> -s "CCCCCOCCN" -t 0.3
+```
+
 
