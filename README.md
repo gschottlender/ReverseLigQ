@@ -78,7 +78,7 @@ Changing output files directory (must specify full path of existing directory):
 ./compound_test.py -org 2 -s "CCCCCOCCN" -o /home/username/example-directory/
 ```
 
-### Upload new organisms
+### Upload new organisms (command-line only; not available in the Graphic interface).
 
 #### script 1_obtain_pfam_domains.py
 
