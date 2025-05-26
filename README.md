@@ -50,7 +50,7 @@ The output consists of 3 files:
 Run with the following lines
 ```sh
 conda activate reverse_ligq
-streamlit run lq_rev.py
+streamlit run rev_lq.py
 ```
 
 #### Running docker container
