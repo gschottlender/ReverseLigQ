@@ -191,8 +191,6 @@ The column **`domain_tag`** in the predicted_targets.csv output file indicates t
   In these cases, multiple domains are present in the protein, and although the ligand–protein interaction is supported by experimental data, the **precise domain-level binding site remains undetermined**.  
   Therefore, possible tags denote **putative binding domains** inferred from proteins with multiple domains rather than confirmed, domain-specific evidence.
 
-This distinction is crucial when interpreting predicted protein targets:  
-**curated associations provide stronger domain-level evidence**, while **possible associations broaden the search space** by including biologically plausible but unconfirmed domain interactions.
 ---
 
 ## Programmatic usage (Python API)
