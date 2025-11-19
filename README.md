@@ -1,4 +1,4 @@
-# ReverseLigQ (CLI version)
+# ReverseLigQ
 
 ReverseLigQ retrieves candidate binding target proteins from various pathogenic organisms (and human) for a query ligand using an unsupervised, similarity-based approach. Candidate targets are inferred from compounds with known binding domains, combining:
 
@@ -6,7 +6,6 @@ ReverseLigQ retrieves candidate binding target proteins from various pathogenic 
 - Mapping ligands to Pfam domains and proteins.
 
 This repository provides a **command-line interface** (`rev_ligq.py`) to run the full pipeline for a single query SMILES and organism.  
-There is **no Streamlit / web interface** and **no workflow para agregar organismos nuevos** en esta versión.
 
 ---
 
