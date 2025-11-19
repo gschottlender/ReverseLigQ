@@ -50,7 +50,7 @@ cd ReverseLigQ
 ### 2. Create environment
 
 ```bash
-env create -f environment.yml -n reverse_ligq
+conda env create -f environment.yml -n reverse_ligq
 conda activate reverse_ligq
 ```
 
