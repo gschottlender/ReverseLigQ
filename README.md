@@ -1,186 +1,216 @@
-# ReverseLigQ
-Retrieves candidate binding target proteins from various pathogenic organisms (and now also implemented human drug target search), for a query ligand using an unsupervised learning approach based on a chemical similarity search. This approach identifies candidate target proteins based on compounds with known binding domains.
+# ReverseLigQ (CLI version)
 
-Detailed information in the corresponding article: Schottlender, G., Prieto, J. M., Palumbo, M. C., Castello, F. A., Serral, F., Sosa, E. J., et al. (2022). From drugs to targets: reverse engineering the virtual screening process on a proteomic scale. Front. Drug Discov. 2:969983. doi: 10.3389/fddsv.2022.969983
+ReverseLigQ retrieves candidate binding target proteins from various pathogenic organisms (and human) for a query ligand using an unsupervised, similarity-based approach. Candidate targets are inferred from compounds with known binding domains, combining:
+
+- Ligand similarity search (Morgan fingerprints + Tanimoto, or ChemBERTa embeddings).
+- Mapping ligands to Pfam domains and proteins.
+
+This repository provides a **command-line interface** (`rev_ligq.py`) to run the full pipeline for a single query SMILES and organism.  
+There is **no Streamlit / web interface** and **no workflow para agregar organismos nuevos** en esta versión.
+
+---
+
+## Table of Contents
+
+- [Requirements](#requirements)  
+- [Installation](#installation)  
+- [Data and datasets](#data-and-datasets)  
+- [Usage (command line)](#usage-command-line)  
+  - [Supported organisms](#supported-organisms)  
+  - [Main arguments](#main-arguments)  
+  - [Choosing the similarity backend](#choosing-the-similarity-backend)  
+- [Outputs](#outputs)  
+- [Programmatic usage (Python API)](#programmatic-usage-python-api)  
+- [Features](#features)  
+- [Contributors and citation](#contributors-and-citation)  
+- [License](#license)
+
+---
 
 ## Requirements
-Anaconda is required to build the environment with the necessary packages in order to run the program.
- 
+
+- **Python**: 3.8+  
+- Dependencies:
+  - `conda`
+  - `rdkit`
+  - `numpy`, `pandas`
+  - `torch`, `transformers`, `huggingface_hub`
+
+---
 
 ## Installation
-1. Clone the repository in the desired directory:
-```sh
+
+### 1. Clone the repository
+
+```bash
 git clone https://github.com/gschottlender/ReverseLigQ.git
+cd ReverseLigQ
 ```
-### Option 1: install environment locally
-2. In the directory where the repository is cloned, create the environment from the .yml file provided to run the program and activate it:
 
-```sh
-conda env create -f environment.yml -n reverse_ligq
+### 2. Create environment
+
+```bash
+env create -f environment.yml -n reverse_ligq
 conda activate reverse_ligq
 ```
-3. Add excecution permission to the script compound_test.py:
-```sh
-chmod +x compound_test.py
+
+### 3. Optional executable
+
+```bash
+chmod +x rev_ligq.py
 ```
 
-### Option 2: using docker container (for graphic interface)
-2. Build Docker image
-```sh
-docker build -t rev_ligq .
+---
+
+## Data and datasets
+
+ReverseLigQ uses a dataset stored in `data/` by default.  
+If absent, it will be automatically downloaded from the HuggingFace repository on first run:
+
+Dataset link:  
+👉 **https://huggingface.co/datasets/gschottlender/reverse_ligq**
+
+Contents include fingerprints/embeddings, SMILES dictionaries, ligand lists, domain mappings, and protein descriptions.
+
+---
+
+## Usage (command line)
+
+### Basic example
+
+```bash
+python rev_ligq.py   --query-smiles "CCCCCOCCN"   --organism 2
 ```
 
-## General information
-The query (input) ligand structure must be in SMILES format.
+### Supported organisms
 
-Databases of each pathogen are located in the Organisms folder.
+1. Bartonella bacilliformis  
+2. Klebsiella pneumoniae  
+3. Mycobacterium tuberculosis  
+4. Trypanosoma cruzi  
+5. Staphylococcus aureus RF122  
+6. Streptococcus uberis 0140J  
+7. Enterococcus faecium  
+8. Escherichia coli MG1655  
+9. Streptococcus agalactiae NEM316  
+10. Pseudomonas syringae  
+11. DENV  
+12. SARS-CoV-2  
+13. Homo sapiens  
 
-The output consists of 3 files:
+### Main arguments
 
-1. candidate_targets.csv: includes predicted target Pfam domains, their respective proteins (Uniprot ID), the names of the compounds that bind them and the Tanimoto Similarity index between the query compound and the candidate domain's most similar binder ligand.
+Below is a detailed description of the main parameters of `rev_ligq.py`:
 
-2. candidate_targets_full_result.csv: similar to candidate_targets.csv, but also includes groups of candidate domains from which the correct one is unknown. They are denoted between parenthesis, for example (PF00905, PF00069). All their respective proteins are shown altogether in the corresponding row.
+-   **`--query-smiles`** *(required)*\
+    The **SMILES string** of the query ligand.\
+    This is the core input: the entire pipeline is built around
+    comparing this ligand to all compounds in the dataset.
 
-3. similar_compound_search.xlsx: shows 2D chemical structures, Tanimoto Similarity with the query ligand and known binding domains of the compounds obtained in the similarity search.
+-   **`--organism`** *(required)*\
+    Numeric ID of the organism (1--13).\
+    Determines which organism's protein set will be used when mapping
+    domains to candidate targets.\
+    The full organism list is provided in the *Supported organisms*
+    section.
 
-## Usage
+-   **`--local-dir`** *(default: `data/`)*\
+    Directory where the ReverseLigQ dataset is stored.\
+    If it does not exist, the dataset will be automatically downloaded
+    from HuggingFace into this folder.
 
-### Graphic interface
-#### Using local environment
-Run with the following lines
-```sh
-conda activate reverse_ligq
-streamlit run rev_lq.py
+-   **`--out-dir`** *(default: `results/`)*\
+    Directory where output files will be saved, including:
+
+    -   `predicted_targets.csv`\
+    -   `similarity_search_results.csv`
+
+-   **`--search-type`** *(default: `morgan_fp_tanimoto`)*\
+    Method used for ligand similarity search:
+
+    -   `morgan_fp_tanimoto`: fast, lightweight, RDKit-based fingerprint
+        similarity.\
+    -   `chemberta`: uses ChemBERTa transformer embeddings; slower but
+        can capture richer chemical patterns.
+
+-   **`--top-k-ligands`** *(default: `1000`)*\
+    Number of most similar ligands retrieved during similarity search.\
+    Higher values may increase recall of relevant domains but also
+    increase computation time.
+
+-   **`--max-domain-ranks`** *(default: `10`)*\
+    Maximum number of **domain ranks** to include in the final protein
+    table.\
+    Ranks are based on similarity scores of the reference ligands;
+    domains with equal scores share the same rank.
+
+-   **`--include-only-curated`** *(flag)*\
+    If set, only **curated** ligand--domain associations are used when
+    inferring protein targets.\
+    If not set, both curated and possible associations are included.
+
+-   **`--only-proteins-with-description`** *(flag)*\
+    If set, only proteins with an available functional description will
+    be included in the final table.\
+    If not set, all proteins are included regardless of annotation
+    completeness.
+
+### Choosing the similarity backend
+
+- **Morgan + Tanimoto**: fastest, minimal dependencies  
+- **ChemBERTa**: transformer-based, slower but richer
+
+---
+
+## Outputs
+
+Running the CLI produces:
+
+### 1. `predicted_targets.csv`
+Candidate protein targets with domain evidence and similarity scores.
+
+### 2. `similarity_search_results.csv`
+Ligand similarity ranking and associated domain summaries.
+
+---
+
+## Programmatic usage (Python API)
+
+```python
+from pathlib import Path
+from rev_ligq import target_search
+
+targets_df, ligands_df = target_search(
+    query_smiles="CCCCCOCCN",
+    organism="2",
+    base_dir=Path("data")
+)
 ```
 
-#### Running docker container
-1. Run docker container
-```sh
-docker run -p 8000:8000 rev_ligq
-```
-2. Open in the browser [http://localhost:8000/](http://localhost:8000/)
+---
 
-### Command line
-Please use the help command first for details about the organisms included in the databases, their respective reference numbers and detailed info about other parameters:
-```sh
-./compound_test.py -h
-```
-Base example to search candidate targets for a query ligand with SMILES "CCCCCOCCN" in the organism Klebsiella pneumoniae (reference number 2) with default similarity threshold (0.4): 
-```sh
-./compound_test.py -org 2 -s "CCCCCOCCN"
-```
-Switching the Tanimoto Similarity threshold to a desired one (0.3 in this example):
-```sh
-./compound_test.py -org 2 -s "CCCCCOCCN" -t 0.3
-```
-Changing output files directory (must specify full path of existing directory):
-```sh
-./compound_test.py -org 2 -s "CCCCCOCCN" -o /home/username/example-directory/
-```
+## Features
 
-### Add new organisms (command-line only; not available in the Graphic interface).
+- Ligand similarity search (Morgan / ChemBERTa)  
+- Mapping to Pfam domains (curated + possible)  
+- Aggregation to protein-level targets  
+- Human organism supported (ID 13)
 
-The process is divided into 5 steps to generate the necessary databases. Each step has its own requirements, which are detailed in the corresponding section.
+---
 
-#### script 1_obtain_pfam_domains.py
+## Contributors and citation
 
-Obtains protein domains in Pfam from a proteome and generates the corresponding protein database grouped by their domains.
+If you use this tool, please cite:
 
-Requirements: 
-- The proteome of the organism.
-- Local hmm database PfamA.
-- Hmmer installed in the environment.
-- Directory in which the databases are saved (specified with the -o argument).
+**Schottlender et al. (2022)**  
+*From drugs to targets: reverse engineering the virtual screening process on a proteomic scale.*  
+Front. Drug Discov. 2:969983. https://doi.org/10.3389/fddsv.2022.969983
 
-Preprocess PfamA database:
-```sh
-hmmpress <pfam_directory>/Pfam-A.hmm
-```
+---
 
-Output:
-- Protein database grouped by family in the fam_prot_dict.pkl file.
+## License
 
-Usage:
-```sh
-1_obtain_pfam_domains.py --pfam_db <pfamA database directory>/Pfam-A.hmm -i ./<organism proteome directory>/organism_proteome.fasta -o ./organism_name
-```
+This project is licensed under the **MIT License**.
 
-#### script 2_obtain_pdb_ligands.py
-
-Obtains corresponding PDB ligands from Pfam families in the organism.
-
-Requirements:
-- Output from script 1_obtain_pfam_domains.py
-- Moad.json database.
-
-Usage: 
-
-```sh
-2_obtain_pdb_ligands.py --moad_db <moad database directory>/moad.json -o ./organism_name
-```
-#### script build_chembl_prot_pfam_db.py
-
-Generates a Chembl targets database and their corresponding Pfam families (does not need to be used for each organism, only needs to be created once).
-
-Requirements:
-- Chembl database in sqlite format.
-
-Usage:
-
-```sh
-build_chembl_prot_pfam_db.py -db_dir <directory to save database> -cdb <chembl database directory>/chembl_<version>.db
-```
-
-#### script 3_obtain_chembl_ligands.py
-
-Obtains corresponding ChEMBL ligands from Pfam families in the organism.
-
-Requirements:
-- Output from script build_chembl_prot_pfam_db.py
-- Output from script 1_obtain_pfam_domains.py 
-- Local ChEMBL database in sqlite format (.db).
-
-Usage:
-
-```sh
-3_obtain_chembl_ligands.py -cdb <local ChEMBL database directory>/chembl_32.db -tdb <directory to store ChEMBL targets database and Pfam families> -o ./organism_name
-```
-
-#### script 4_curate_chembl_domains.py
-
-Cleans the ChEMBL database. For those ligands that bind to one of several possible domains, it searches for the correct domain through PDB ligands, which are known to bind to the exact domain.
-
-Requirements:
-- ChEMBL databases obtained from script 3_obtain_chembl_ligands.py
-- PDB ligand databases.
-
-Usage:
-
-```sh
-4_curate_chembl_domains.py -o ./organism_name
-```
-
-#### script 5_combine_dbs.py
-
-Combines the curated PDB and ChEMBL databases.
-
-Requirements:
-- PDB and ChEMBL databases of the custom organism.
-
-Usage:
-
-```sh
-5_combine_dbs.py -o organism_name
-```
-
-#### Perform predictions on a custom organism
-
-Usage example:
-
-Performs the prediction for a custom organsim and switches the Tanimoto Similarity threshold to a desired one (0.3 in this example):
-
-```sh
-./compound_test.py --custom_organism <custom_organism_directory> -s "CCCCCOCCN" -t 0.3
-```
-
+---
 
