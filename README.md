@@ -82,6 +82,12 @@ Contents include fingerprints/embeddings, SMILES dictionaries, ligand lists, dom
 python rev_ligq.py   --query-smiles "CCCCCOCCN"   --organism 2
 ```
 
+### Example using chemberta
+
+```bash
+python rev_ligq.py   --query-smiles "CCCCCOCCN"   --organism 2 --search-type chemberta
+```
+
 ### Supported organisms
 
 1. Bartonella bacilliformis  
