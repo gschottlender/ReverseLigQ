@@ -1,0 +1,28 @@
+# ============================
+#  Jupyter Notebooks
+# ============================
+# Ignore all notebook files
+*.ipynb
+.ipynb_checkpoints/
+
+# ============================
+#  Python Cache
+# ============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.cache/
+*.cache/
+.pytest_cache/
+
+# ============================
+#  CSV files (downloaded from HuggingFace)
+# ============================
+*.csv
+
+# ============================
+#  Pickle files
+# ============================
+*.pkl
+*.pickle
