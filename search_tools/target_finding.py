@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pickle
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -8,14 +9,27 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+
 from huggingface_hub import snapshot_download
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit import DataStructs
 from transformers import AutoTokenizer, AutoModel
 
+# -------------------------------------------------------------------------
+# Defaults requested
+# -------------------------------------------------------------------------
+DEFAULT_STORE_ROOT = Path("databases/compound_data/pdb_chembl")
+DEFAULT_LIGAND_LISTS_PATH = Path("databases/rev_ligq/ligand_lists.pkl")
 
-def get_dataset(local_dir: str = "data") -> None:
+CHEMBERTA_REP_NAME = "chemberta_zinc_base_768"
+MORGAN_REP_NAME = "morgan_1024_r2"
+
+DEFAULT_TANIMOTO_THRESHOLD = 0.4
+DEFAULT_CHEMBERTA_THRESHOLD = 0.8
+DEFAULT_K_MAX = 1000
+
+def get_dataset(local_dir: str = "databases") -> None:
     """
     Download the ReverseLigQ dataset from Hugging Face into a local directory.
 
@@ -32,200 +46,264 @@ def get_dataset(local_dir: str = "data") -> None:
     )
 
 
-# Estas clases van a dejar de usarse
+from search_tools.compound_helpers import LigandStore, unpack_bits  # noqa: E402
+
+
+# -------------------------------------------------------------------------
+# Shared helpers
+# -------------------------------------------------------------------------
+def _load_ligand_lists(path: str | Path) -> Dict[str, List[str]]:
+    path = Path(path)
+    with path.open("rb") as f:
+        d = pickle.load(f)
+    # Normalize keys to strings
+    return {str(k): list(v) for k, v in d.items()}
+
+
+def _build_idx_to_id(store: LigandStore) -> np.ndarray:
+    """
+    idx_to_id[lig_idx] = chem_comp_id (as str)
+    Requires lig_idx to be dense [0..N-1] and consistent with representation rows.
+    """
+    ligs = store.ligands
+    if "lig_idx" not in ligs.columns or "chem_comp_id" not in ligs.columns:
+        raise ValueError("ligands.parquet must contain 'lig_idx' and 'chem_comp_id'.")
+
+    ligs_sorted = ligs.sort_values("lig_idx", kind="mergesort")
+    idxs = ligs_sorted["lig_idx"].to_numpy(dtype=np.int64)
+    if not np.array_equal(idxs, np.arange(len(ligs_sorted), dtype=np.int64)):
+        raise ValueError("lig_idx is not a dense 0..N-1 range; cannot map idx->id safely.")
+
+    return ligs_sorted["chem_comp_id"].astype(str).to_numpy()
+
+
+def _build_smiles_lookup(store: LigandStore) -> Dict[str, str]:
+    ligs = store.ligands
+    if "smiles" not in ligs.columns:
+        raise ValueError("ligands.parquet must contain a 'smiles' column to return SMILES in results.")
+    return dict(zip(ligs["chem_comp_id"].astype(str), ligs["smiles"].astype(str)))
+
+
+def _org_indices_from_ids(
+    rep,
+    org_ids: List[str],
+    strict: bool = False,
+) -> np.ndarray:
+    """
+    Convert list of chem_comp_id -> np.ndarray of lig_idx using rep.id_to_idx.
+    """
+    id_to_idx = rep.id_to_idx
+    if strict:
+        missing = [cid for cid in org_ids if cid not in id_to_idx]
+        if missing:
+            raise KeyError(
+                f"{len(missing)} ids from ligand_lists not found in ligands.parquet "
+                f"(examples: {missing[:5]})"
+            )
+
+    # Fast path: include only those present
+    return np.fromiter(
+        (int(id_to_idx[cid]) for cid in org_ids if cid in id_to_idx),
+        dtype=np.int64,
+    )
+
+
+@dataclass(frozen=True)
+class SearchConfig:
+    """
+    Common search configuration for both searchers.
+    """
+    min_score: float
+    k_max: int
+    chunk_size: int = 50_000
+    strict_ligands: bool = False
+
+
+def _update_topk_with_threshold(
+    scores: np.ndarray,
+    idxs: np.ndarray,
+    min_score: float,
+    best_scores: np.ndarray,
+    best_indices: np.ndarray,
+    k_max: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Keep only candidates with score >= min_score and maintain the global top-k_max
+    among those candidates.
+
+    Parameters
+    ----------
+    scores : (M,) float32
+    idxs   : (M,) int64    global indices aligned with scores
+    min_score : float
+    best_scores : (K,) float32
+    best_indices: (K,) int64
+    k_max : int
+
+    Returns
+    -------
+    (best_scores, best_indices) updated, each shape (<=k_max,)
+    """
+    if scores.size == 0:
+        return best_scores, best_indices
+
+    mask = scores >= min_score
+    if not np.any(mask):
+        return best_scores, best_indices
+
+    s = scores[mask]
+    i = idxs[mask]
+
+    # If too many in this chunk, keep only top k_max locally
+    if s.size > k_max:
+        local = np.argpartition(-s, k_max - 1)[:k_max]
+        s = s[local]
+        i = i[local]
+
+    all_scores = np.concatenate([best_scores, s])
+    all_indices = np.concatenate([best_indices, i])
+
+    # Keep top k_max overall
+    k_eff = min(k_max, all_scores.size)
+    keep = np.argpartition(-all_scores, k_eff - 1)[:k_eff]
+    best_scores = all_scores[keep]
+    best_indices = all_indices[keep]
+
+    return best_scores, best_indices
+
+
+def _finalize_results(
+    best_scores: np.ndarray,
+    best_indices: np.ndarray,
+    idx_to_id: np.ndarray,
+    smiles_lookup: Dict[str, str],
+    organism: str,
+) -> List[Dict[str, Any]]:
+    """
+    Sort by score desc, tie-break by idx_global asc for determinism,
+    then build the final list-of-dicts schema.
+    """
+    if best_scores.size == 0:
+        return []
+
+    # Sort: (-score, idx)
+    order = np.lexsort((best_indices.astype(np.int64), -best_scores.astype(np.float32)))
+    scores = best_scores[order]
+    indices = best_indices[order]
+
+    results: List[Dict[str, Any]] = []
+    rank = 1
+    for idx_global, score in zip(indices, scores):
+        if idx_global < 0:
+            continue
+        comp_id = str(idx_to_id[int(idx_global)])
+        results.append(
+            {
+                "rank": rank,
+                "idx_global": int(idx_global),
+                "comp_id": comp_id,
+                "score": float(score),
+                "smiles": smiles_lookup.get(comp_id),
+                "organism": organism,
+            }
+        )
+        rank += 1
+    return results
+
+
+# -------------------------------------------------------------------------
+# ChemBERTa (cosine) searcher
+# -------------------------------------------------------------------------
 class ChembertaSearcher:
     """
-    Similarity searcher based on ChemBERTa embeddings for a single organism.
+    Cosine similarity search using a ChemBERTa embedding representation,
+    restricted to ligands belonging to a given organism.
 
-    This class:
-      - loads global ChemBERTa embeddings (memory-mapped),
-      - restricts them to the ligands associated with a given organism,
-      - computes a ChemBERTa embedding for a query SMILES,
-      - performs cosine-similarity k-NN search only within that organism.
+    - Representation is loaded via LigandStore (memmap on disk).
+    - Organism candidates are selected via ligand_lists.pkl (list of chem_comp_id).
+    - Scoring streams over memmap in chunks to limit RAM.
+    - Selection keeps only hits with score >= min_score, capped to top k_max hits.
     """
 
     def __init__(
         self,
-        embs: np.memmap,
-        id_to_idx: Dict[str, int],
-        idx_to_id: List[str],
-        smiles_dict: Dict[str, str],
+        store: LigandStore,
+        ligand_lists: Dict[str, List[str]],
         organism: str,
-        org_indices: np.ndarray,
-        tokenizer,
-        model,
-        device: str = "cpu",
-        max_length: int = 256,
-    ) -> None:
-        """
-        Parameters
-        ----------
-        embs : np.memmap
-            Global embedding matrix of shape (N_total, H), memory-mapped.
-        id_to_idx : dict
-            Global mapping from compound ID (e.g. CHEMBL ID) to global index.
-        idx_to_id : list
-            Global list mapping index -> compound ID.
-        smiles_dict : dict
-            Subset of global SMILES dictionary, restricted to this organism.
-        organism : str
-            Organism identifier (e.g. "1", "13", ...).
-        org_indices : np.ndarray
-            Global indices (into `embs`) that belong to this organism.
-        tokenizer : transformers.PreTrainedTokenizer
-            ChemBERTa tokenizer.
-        model : transformers.PreTrainedModel
-            ChemBERTa model in eval mode.
-        device : str
-            Device where the model lives ("cpu" or "cuda").
-        max_length : int
-            Maximum token length for ChemBERTa input.
-        """
-        self.embs = embs  # (N_total, H) float32/float16 memmap
-        self.id_to_idx = id_to_idx
-        self.idx_to_id = idx_to_id
-        self.smiles_dict = smiles_dict
-        self.organism = organism
-        self.org_indices = org_indices
-        self.tokenizer = tokenizer
-        self.model = model
-        self.device = device
-        self.max_length = max_length
-
-        # Global info (not only for this organism)
-        self.N_total, self.H = embs.shape
-        self.N_org = len(org_indices)
-
-    # --------- convenience constructor ---------
-    @classmethod
-    def from_paths(
-        cls,
-        base_dir: str | Path,
-        organism: str,
+        rep_name: str = CHEMBERTA_REP_NAME,
         model_name: str = "seyonec/ChemBERTa-zinc-base-v1",
         device: Optional[str] = None,
-    ) -> "ChembertaSearcher":
-        """
-        Build a ChembertaSearcher for a single organism from disk.
+        max_length: int = 256,
+        config: Optional[SearchConfig] = None,
+    ) -> None:
+        self.store = store
+        self.rep = store.load_representation(rep_name)
+        self.organism = str(organism)
 
-        This method:
-          - loads global embeddings (memmap),
-          - loads id_to_idx / idx_to_id mappings,
-          - loads global SMILES,
-          - loads ligand_lists and extracts the ligands for this organism,
-          - builds a restricted SMILES dict for the organism,
-          - loads ChemBERTa model and tokenizer.
+        self.idx_to_id = _build_idx_to_id(store)
+        self.smiles_lookup = _build_smiles_lookup(store)
 
-        Parameters
-        ----------
-        base_dir : str or Path
-            Directory containing:
-              - comps_embs.npy
-              - id_to_idx.pkl
-              - idx_to_id.pkl
-              - comps_smiles.pkl
-              - ligand_lists.pkl
-        organism : str
-            Organism identifier (e.g. "1", "13", ...).
-        model_name : str
-            Hugging Face model name or path for ChemBERTa.
-        device : str, optional
-            "cpu" or "cuda". If None, defaults to "cpu" here.
+        if self.organism not in ligand_lists:
+            raise KeyError(f"Organism {self.organism!r} not found in ligand_lists.")
+        org_ids = ligand_lists[self.organism]
+        self.org_indices = _org_indices_from_ids(self.rep, org_ids, strict=False)
 
-        Returns
-        -------
-        ChembertaSearcher
-        """
-        base_dir = Path(base_dir)
-
-        # 1) Global embeddings (NOT fully loaded into RAM, memmap only)
-        embs = np.load(base_dir / "comps_embs.npy", mmap_mode="r")
-
-        # 2) Global mappings
-        with open(base_dir / "id_to_idx.pkl", "rb") as f:
-            id_to_idx = pickle.load(f)
-        with open(base_dir / "idx_to_id.pkl", "rb") as f:
-            idx_to_id = pickle.load(f)
-
-        # 3) Global SMILES dictionary
-        with open(base_dir / "comps_smiles.pkl", "rb") as f:
-            smiles_global = pickle.load(f)
-
-        # 4) Ligand lists by organism
-        with open(base_dir / "ligand_lists.pkl", "rb") as f:
-            ligand_lists = pickle.load(f)
-
-        organism_str = str(organism)
-        if organism_str not in ligand_lists:
-            raise KeyError(f"Organism {organism_str!r} not found in ligand_lists.pkl")
-
-        ligand_ids_org = ligand_lists[organism_str]
-
-        # 5) Global indices for this organism
-        org_indices: List[int] = []
-        for lig in ligand_ids_org:
-            if lig not in id_to_idx:
-                raise KeyError(
-                    f"Ligand {lig!r} from organism {organism_str} not found in id_to_idx."
-                )
-            org_indices.append(id_to_idx[lig])
-        org_indices_array = np.array(org_indices, dtype=np.int64)
-
-        # 6) Restrict SMILES dictionary to this organism
-        smiles_org = {
-            lig: smiles_global[lig]
-            for lig in ligand_ids_org
-            if lig in smiles_global
-        }
-
-        # 7) Load ChemBERTa model and tokenizer
+        # Model for query embedding
         if device is None:
-            device = "cpu"
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = device
+        self.max_length = int(max_length)
 
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModel.from_pretrained(model_name)
-        model.to(device)
-        model.eval()
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModel.from_pretrained(model_name).to(self.device)
+        self.model.eval()
 
+        # Rep metadata
+        self.dim = int(self.rep.meta["dim"])
+        # If you ever store normalized embeddings, set meta["normalized"]=True for speed
+        self.embs_are_normalized = bool(self.rep.meta.get("normalized", False))
+
+        if config is None:
+            config = SearchConfig(
+                min_score=DEFAULT_CHEMBERTA_THRESHOLD,
+                k_max=DEFAULT_K_MAX,
+                chunk_size=50_000,
+                strict_ligands=False,
+            )
+        self.config = config
+
+    @classmethod
+    def from_defaults(
+        cls,
+        organism: str,
+        store_root: str | Path = DEFAULT_STORE_ROOT,
+        ligand_lists_path: str | Path = DEFAULT_LIGAND_LISTS_PATH,
+        rep_name: str = CHEMBERTA_REP_NAME,
+        model_name: str = "seyonec/ChemBERTa-zinc-base-v1",
+        device: Optional[str] = None,
+        max_length: int = 256,
+        min_score: float = DEFAULT_CHEMBERTA_THRESHOLD,
+        k_max: int = DEFAULT_K_MAX,
+        chunk_size: int = 50_000,
+    ) -> "ChembertaSearcher":
+        store = LigandStore(store_root)
+        ligand_lists = _load_ligand_lists(ligand_lists_path)
+        cfg = SearchConfig(min_score=min_score, k_max=k_max, chunk_size=chunk_size)
         return cls(
-            embs=embs,
-            id_to_idx=id_to_idx,
-            idx_to_id=idx_to_id,
-            smiles_dict=smiles_org,
-            organism=organism_str,
-            org_indices=org_indices_array,
-            tokenizer=tokenizer,
-            model=model,
+            store=store,
+            ligand_lists=ligand_lists,
+            organism=str(organism),
+            rep_name=rep_name,
+            model_name=model_name,
             device=device,
+            max_length=max_length,
+            config=cfg,
         )
 
-    # --------- single-SMILES embedding ---------
     @torch.no_grad()
-    def embed_smiles(
-        self,
-        smiles: str,
-        use_amp: bool = False,
-        pooling: str = "mean",
-        normalize: bool = True,
-    ) -> np.ndarray:
+    def embed_smiles(self, smiles: str, pooling: str = "mean", normalize: bool = True) -> np.ndarray:
         """
-        Convert a SMILES string into a 1D ChemBERTa embedding on CPU.
-
-        Parameters
-        ----------
-        smiles : str
-            Input SMILES string.
-        use_amp : bool
-            Mixed precision (AMP) flag. Only relevant for GPU; ignored on CPU.
-        pooling : str
-            "mean" for masked mean pooling, or "cls" for first token.
-        normalize : bool
-            If True, return L2-normalized embedding.
-
-        Returns
-        -------
-        np.ndarray
-            1D embedding vector of shape (H,).
+        Compute query embedding (float32, shape (dim,)) using attention-mask mean pooling (default).
         """
         encoded = self.tokenizer(
             [smiles],
@@ -236,7 +314,6 @@ class ChembertaSearcher:
         )
         encoded = {k: v.to(self.device) for k, v in encoded.items()}
 
-        # For CPU we do not use autocast
         outputs = self.model(**encoded)
         last_hidden = outputs.last_hidden_state  # [1, T, H]
 
@@ -249,251 +326,160 @@ class ChembertaSearcher:
             vec = summed / counts                                                 # [1, H]
 
         vec = vec.squeeze(0)  # [H]
-
         if normalize:
             vec = F.normalize(vec, p=2, dim=0)
 
-        return vec.detach().cpu().numpy().astype(np.float32)
+        arr = vec.detach().cpu().numpy().astype(np.float32)
+        if arr.shape[0] != self.dim:
+            raise RuntimeError(f"Query embedding dim mismatch: got {arr.shape[0]}, expected {self.dim}")
+        return arr
 
-    # --------- cosine similarity search (within this organism) ---------
     def search(
         self,
         query_smiles: str,
-        top_k: int = 10,
-        chunk_size: int = 50_000,
+        min_score: Optional[float] = None,
+        k_max: Optional[int] = None,
+        chunk_size: Optional[int] = None,
+        pooling: str = "mean",
     ) -> List[Dict[str, Any]]:
         """
-        Perform cosine-similarity k-NN search for a query SMILES,
-        restricted to the ligands of this organism.
+        Threshold-based cosine search with an additional neighbor cap.
 
-        Parameters
-        ----------
-        query_smiles : str
-            Query SMILES string.
-        top_k : int
-            Number of nearest neighbors to return.
-        chunk_size : int
-            Chunk size for streaming over embeddings to save RAM.
+        - Keep only hits with score >= min_score
+        - If too many hits, keep only top k_max by score
+        - Results are returned sorted by score desc (tie-break idx asc)
 
-        Returns
-        -------
-        List[dict]
-            Sorted list of neighbors with fields:
-              - rank
-              - idx_global
-              - comp_id
-              - score
-              - smiles
-              - organism
+        Defaults:
+          min_score = 0.8
+          k_max     = 1000
         """
-        # 1) Query embedding
-        query_vec = self.embed_smiles(query_smiles)
+        cfg = self.config
+        min_score = cfg.min_score if min_score is None else float(min_score)
+        k_max = cfg.k_max if k_max is None else int(k_max)
+        chunk_size = cfg.chunk_size if chunk_size is None else int(chunk_size)
 
+        q = self.embed_smiles(query_smiles, pooling=pooling, normalize=True)  # unit norm
         org_idx = self.org_indices
         n_org = len(org_idx)
 
-        best_scores = np.full(top_k, -1.0, dtype=np.float32)
-        best_indices = np.full(top_k, -1, dtype=np.int64)
+        best_scores = np.empty((0,), dtype=np.float32)
+        best_indices = np.empty((0,), dtype=np.int64)
 
-        # 2) Stream over organism indices in chunks
         for start in range(0, n_org, chunk_size):
             end = min(start + chunk_size, n_org)
-            idx_chunk = org_idx[start:end]  # (M,)
-            chunk_embs = np.asarray(self.embs[idx_chunk], dtype=np.float32)  # (M, H)
+            idx_chunk = org_idx[start:end]
 
-            # Cosine similarity = dot product if vectors are normalized
-            sims = chunk_embs @ query_vec  # (M,)
+            # (M, dim) float32
+            chunk_embs = np.asarray(self.rep.memmap[idx_chunk], dtype=np.float32)
 
-            local_top_k = min(top_k, end - start)
-            idx_local = np.argpartition(-sims, local_top_k - 1)[:local_top_k]
-            scores_local = sims[idx_local]
-            idx_global_local = idx_chunk[idx_local]
+            # cosine = dot/(||x||*||q||); ||q||=1
+            sims = chunk_embs @ q
+            if not self.embs_are_normalized:
+                norms = np.linalg.norm(chunk_embs, axis=1)
+                norms = np.where(norms > 0, norms, 1.0)
+                sims = sims / norms
 
-            all_scores = np.concatenate([best_scores, scores_local])
-            all_indices = np.concatenate([best_indices, idx_global_local])
-
-            k_eff = min(top_k, all_scores.size)
-            new_idx = np.argpartition(-all_scores, k_eff - 1)[:k_eff]
-            best_scores = all_scores[new_idx]
-            best_indices = all_indices[new_idx]
-
-        # 3) Final sort
-        order = np.argsort(-best_scores)
-        best_scores = best_scores[order]
-        best_indices = best_indices[order]
-
-        results: List[Dict[str, Any]] = []
-        for rank, (idx_global, score) in enumerate(zip(best_indices, best_scores), start=1):
-            if idx_global < 0:
-                continue
-            comp_id = self.idx_to_id[idx_global]
-            smiles = self.smiles_dict.get(comp_id)
-            results.append(
-                {
-                    "rank": rank,
-                    "idx_global": int(idx_global),
-                    "comp_id": comp_id,
-                    "score": float(score),
-                    "smiles": smiles,
-                    "organism": self.organism,
-                }
+            best_scores, best_indices = _update_topk_with_threshold(
+                scores=sims.astype(np.float32, copy=False),
+                idxs=idx_chunk.astype(np.int64, copy=False),
+                min_score=min_score,
+                best_scores=best_scores,
+                best_indices=best_indices,
+                k_max=k_max,
             )
 
-        return results
+        return _finalize_results(
+            best_scores=best_scores,
+            best_indices=best_indices,
+            idx_to_id=self.idx_to_id,
+            smiles_lookup=self.smiles_lookup,
+            organism=self.organism,
+        )
 
 
+# -------------------------------------------------------------------------
+# Morgan (Tanimoto) searcher
+# -------------------------------------------------------------------------
 class MorganTanimotoSearcher:
     """
-    Similarity searcher based on Morgan fingerprints and Tanimoto coefficient
-    for a single organism.
+    Tanimoto similarity search using a Morgan fingerprint representation,
+    restricted to ligands belonging to a given organism.
+
+    - Representation is loaded via LigandStore (memmap on disk).
+    - Organism candidates are selected via ligand_lists.pkl (list of chem_comp_id).
+    - Scoring streams over memmap in chunks to limit RAM.
+    - Selection keeps only hits with score >= min_score, capped to top k_max hits.
+
+    IMPORTANT:
+    - This implementation assumes your Morgan representation is packed_bits=True
+      (as in your build_morgan_representation). We compute intersection safely by
+      unpacking chunk bits via your existing unpack_bits helper (same one used by
+      Representation.get_by_ids), ensuring bit order consistency with your packing.
     """
 
     def __init__(
         self,
-        fps: np.memmap,
-        id_to_idx: Dict[str, int],
-        idx_to_id: List[str],
-        smiles_dict: Dict[str, str],
+        store: LigandStore,
+        ligand_lists: Dict[str, List[str]],
         organism: str,
-        org_indices: np.ndarray,
+        rep_name: str = MORGAN_REP_NAME,
         radius: int = 2,
+        config: Optional[SearchConfig] = None,
     ) -> None:
-        """
-        Parameters
-        ----------
-        fps : np.memmap
-            Global fingerprint matrix of shape (N_total, fp_dim) with 0/1 values.
-        id_to_idx : dict
-            Global mapping from compound ID to global index.
-        idx_to_id : list
-            Global list mapping index -> compound ID.
-        smiles_dict : dict
-            Subset of global SMILES dictionary for this organism.
-        organism : str
-            Organism identifier (e.g. "1", "13", ...).
-        org_indices : np.ndarray
-            Global indices (into `fps`) that belong to this organism.
-        radius : int
-            Morgan fingerprint radius (default 2).
-        """
-        self.fps = fps
-        self.id_to_idx = id_to_idx
-        self.idx_to_id = idx_to_id
-        self.smiles_dict = smiles_dict
-        self.organism = organism
-        self.org_indices = org_indices
-        self.radius = radius
+        self.store = store
+        self.rep = store.load_representation(rep_name)
+        self.organism = str(organism)
+        self.radius = int(radius)
 
-        self.N_total, self.fp_dim = fps.shape
-        self.N_org = len(org_indices)
+        self.idx_to_id = _build_idx_to_id(store)
+        self.smiles_lookup = _build_smiles_lookup(store)
 
-        # Precompute bit counts for organism fingerprints to speed up Tanimoto
-        fps_org = np.asarray(self.fps[self.org_indices], dtype=np.uint8)
-        self.bits_org = fps_org.sum(axis=1).astype(np.int32)
+        if self.organism not in ligand_lists:
+            raise KeyError(f"Organism {self.organism!r} not found in ligand_lists.")
+        org_ids = ligand_lists[self.organism]
+        self.org_indices = _org_indices_from_ids(self.rep, org_ids, strict=False)
 
-    # --------- convenience constructor ---------
+        # Rep metadata
+        self.fp_dim = int(self.rep.meta["dim"])
+        self.packed_bits = bool(self.rep.meta.get("packed_bits", False))
+        self.packed_dim = int(self.rep.meta.get("packed_dim") or (self.fp_dim // 8))
+
+        if config is None:
+            config = SearchConfig(
+                min_score=DEFAULT_TANIMOTO_THRESHOLD,
+                k_max=DEFAULT_K_MAX,
+                chunk_size=50_000,
+                strict_ligands=False,
+            )
+        self.config = config
+
     @classmethod
-    def from_paths(
+    def from_defaults(
         cls,
-        base_dir: str | Path,
         organism: str,
+        store_root: str | Path = DEFAULT_STORE_ROOT,
+        ligand_lists_path: str | Path = DEFAULT_LIGAND_LISTS_PATH,
+        rep_name: str = MORGAN_REP_NAME,
         radius: int = 2,
+        min_score: float = DEFAULT_TANIMOTO_THRESHOLD,
+        k_max: int = DEFAULT_K_MAX,
+        chunk_size: int = 50_000,
     ) -> "MorganTanimotoSearcher":
-        """
-        Build a MorganTanimotoSearcher for a single organism from disk.
-
-        This method:
-          - loads global FPS (memmap),
-          - loads id_to_idx / idx_to_id,
-          - loads global SMILES,
-          - loads ligand_lists and extracts the ligands for this organism,
-          - builds a restricted SMILES dict for the organism,
-          - precomputes bit counts per-organism.
-
-        Parameters
-        ----------
-        base_dir : str or Path
-            Directory containing:
-              - comps_fps.npy
-              - id_to_idx.pkl
-              - idx_to_id.pkl
-              - comps_smiles.pkl
-              - ligand_lists.pkl
-        organism : str
-            Organism identifier (e.g. "1", "13", ...).
-        radius : int
-            Morgan fingerprint radius to use.
-
-        Returns
-        -------
-        MorganTanimotoSearcher
-        """
-        base_dir = Path(base_dir)
-
-        # 1) Global FPS
-        fps = np.load(base_dir / "comps_fps.npy", mmap_mode="r")
-
-        # 2) Global mappings
-        with open(base_dir / "id_to_idx.pkl", "rb") as f:
-            id_to_idx = pickle.load(f)
-        with open(base_dir / "idx_to_id.pkl", "rb") as f:
-            idx_to_id = pickle.load(f)
-
-        # 3) Global SMILES
-        with open(base_dir / "comps_smiles.pkl", "rb") as f:
-            smiles_global = pickle.load(f)
-
-        # 4) Ligand lists by organism
-        with open(base_dir / "ligand_lists.pkl", "rb") as f:
-            ligand_lists = pickle.load(f)
-
-        organism_str = str(organism)
-        if organism_str not in ligand_lists:
-            raise KeyError(f"Organism {organism_str!r} not found in ligand_lists.pkl")
-
-        ligand_ids_org = ligand_lists[organism_str]
-
-        # 5) Global indices for this organism
-        org_indices: List[int] = []
-        for lig in ligand_ids_org:
-            if lig not in id_to_idx:
-                raise KeyError(
-                    f"Ligand {lig!r} from organism {organism_str} not found in id_to_idx."
-                )
-            org_indices.append(id_to_idx[lig])
-        org_indices_array = np.array(org_indices, dtype=np.int64)
-
-        # 6) Restrict SMILES dictionary to this organism
-        smiles_org = {
-            lig: smiles_global[lig]
-            for lig in ligand_ids_org
-            if lig in smiles_global
-        }
-
+        store = LigandStore(store_root)
+        ligand_lists = _load_ligand_lists(ligand_lists_path)
+        cfg = SearchConfig(min_score=min_score, k_max=k_max, chunk_size=chunk_size)
         return cls(
-            fps=fps,
-            id_to_idx=id_to_idx,
-            idx_to_id=idx_to_id,
-            smiles_dict=smiles_org,
-            organism=organism_str,
-            org_indices=org_indices_array,
+            store=store,
+            ligand_lists=ligand_lists,
+            organism=str(organism),
+            rep_name=rep_name,
             radius=radius,
+            config=cfg,
         )
 
-    # --------- Morgan fingerprint from SMILES ---------
-    def fp_from_smiles(self, smiles: str) -> np.ndarray:
+    def fp_from_smiles_bits(self, smiles: str) -> np.ndarray:
         """
-        Compute a binary Morgan fingerprint (0/1) for a query SMILES.
-
-        Parameters
-        ----------
-        smiles : str
-            Query SMILES.
-
-        Returns
-        -------
-        np.ndarray
-            1D binary fingerprint array of shape (fp_dim,).
+        Compute query Morgan fingerprint as a 0/1 uint8 vector of shape (fp_dim,).
         """
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
@@ -504,106 +490,77 @@ class MorganTanimotoSearcher:
             radius=self.radius,
             nBits=self.fp_dim,
         )
-
         arr = np.zeros((self.fp_dim,), dtype=np.uint8)
         DataStructs.ConvertToNumpyArray(bitvect, arr)
         return arr
 
-    # --------- Tanimoto search within this organism ---------
     def search(
         self,
         query_smiles: str,
-        top_k: int = 10,
-        chunk_size: int = 50_000,
+        min_score: Optional[float] = None,
+        k_max: Optional[int] = None,
+        chunk_size: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Perform Tanimoto-based k-NN search for a query SMILES,
-        restricted to the ligands of this organism.
+        Threshold-based Tanimoto search with an additional neighbor cap.
 
-        Parameters
-        ----------
-        query_smiles : str
-            Query SMILES string.
-        top_k : int
-            Number of neighbors to return.
-        chunk_size : int
-            Chunk size for streaming over FPS to save RAM.
+        - Keep only hits with score >= min_score
+        - If too many hits, keep only top k_max by score
+        - Results are returned sorted by score desc (tie-break idx asc)
 
-        Returns
-        -------
-        List[dict]
-            Sorted list of neighbors with fields:
-              - rank
-              - idx_global
-              - comp_id
-              - score (Tanimoto)
-              - smiles
-              - organism
+        Defaults:
+          min_score = 0.4
+          k_max     = 1000
         """
-        # 1) Query fingerprint
-        q = self.fp_from_smiles(query_smiles).astype(np.uint8)
-        bits_q = q.sum()
+        cfg = self.config
+        min_score = cfg.min_score if min_score is None else float(min_score)
+        k_max = cfg.k_max if k_max is None else int(k_max)
+        chunk_size = cfg.chunk_size if chunk_size is None else int(chunk_size)
+
+        q_bits = self.fp_from_smiles_bits(query_smiles).astype(np.uint8)
+        bits_q = float(q_bits.sum())
 
         org_idx = self.org_indices
         n_org = len(org_idx)
-        bits_org = self.bits_org
 
-        best_scores = np.full(top_k, -1.0, dtype=np.float32)
-        best_indices = np.full(top_k, -1, dtype=np.int64)
+        best_scores = np.empty((0,), dtype=np.float32)
+        best_indices = np.empty((0,), dtype=np.int64)
 
-        # 2) Stream over organism fingerprints
         for start in range(0, n_org, chunk_size):
             end = min(start + chunk_size, n_org)
             idx_chunk = org_idx[start:end]
-            fps_chunk = np.asarray(self.fps[idx_chunk], dtype=np.uint8)  # (M, fp_dim)
 
-            # Intersection = sum(fp & q)
-            intersection = np.bitwise_and(fps_chunk, q).sum(axis=1).astype(np.float32)
-            # Precomputed bits for organism
-            bits_chunk = bits_org[start:end].astype(np.float32)
-            union = bits_q + bits_chunk - intersection
+            # Read packed rows from memmap, then unpack with your canonical helper
+            raw = np.asarray(self.rep.memmap[idx_chunk], dtype=np.uint8)  # (M, packed_dim) if packed_bits
+            if self.packed_bits:
+                fps_chunk = unpack_bits(raw, self.fp_dim).astype(np.uint8, copy=False)  # (M, fp_dim) 0/1
+            else:
+                # In case you stored 0/1 directly (not expected, but supported)
+                fps_chunk = raw.astype(np.uint8, copy=False)  # (M, fp_dim)
 
-            # Avoid division by zero
+            # intersection = sum(fp & q)
+            inter = np.bitwise_and(fps_chunk, q_bits).sum(axis=1).astype(np.float32)
+            bits_chunk = fps_chunk.sum(axis=1).astype(np.float32)
+            union = bits_q + bits_chunk - inter
             denom = np.where(union > 0, union, 1.0)
-            tanimoto = intersection / denom
+            tanimoto = inter / denom
 
-            local_top_k = min(top_k, end - start)
-            idx_local = np.argpartition(-tanimoto, local_top_k - 1)[:local_top_k]
-            scores_local = tanimoto[idx_local]
-            idx_global_local = idx_chunk[idx_local]
-
-            all_scores = np.concatenate([best_scores, scores_local])
-            all_indices = np.concatenate([best_indices, idx_global_local])
-
-            k_eff = min(top_k, all_scores.size)
-            new_idx = np.argpartition(-all_scores, k_eff - 1)[:k_eff]
-            best_scores = all_scores[new_idx]
-            best_indices = all_indices[new_idx]
-
-        # 3) Final sort
-        order = np.argsort(-best_scores)
-        best_scores = best_scores[order]
-        best_indices = best_indices[order]
-
-        results: List[Dict[str, Any]] = []
-        for rank, (idx_global, score) in enumerate(zip(best_indices, best_scores), start=1):
-            if idx_global < 0:
-                continue
-            comp_id = self.idx_to_id[idx_global]
-            smiles = self.smiles_dict.get(comp_id)
-            results.append(
-                {
-                    "rank": rank,
-                    "idx_global": int(idx_global),
-                    "comp_id": comp_id,
-                    "score": float(score),
-                    "smiles": smiles,
-                    "organism": self.organism,
-                }
+            best_scores, best_indices = _update_topk_with_threshold(
+                scores=tanimoto,
+                idxs=idx_chunk.astype(np.int64, copy=False),
+                min_score=min_score,
+                best_scores=best_scores,
+                best_indices=best_indices,
+                k_max=k_max,
             )
 
-        return results
-
+        return _finalize_results(
+            best_scores=best_scores,
+            best_indices=best_indices,
+            idx_to_id=self.idx_to_id,
+            smiles_lookup=self.smiles_lookup,
+            organism=self.organism,
+        )
 
 def attach_domains_to_ligands(
     ligand_results: List[Dict[str, Any]],
@@ -682,48 +639,15 @@ def build_candidate_proteins_table(
     annotated_ligands: List[Dict[str, Any]],
     base_dir: str | Path,
     organism: str | int,
-    max_domain_ranks: int = 50,
+    max_domain_ranks: Optional[int] = 50,   # <-- allow None
     include_only_curated: bool = False,
     show_only_proteins_with_description: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Build the final candidate proteins table from ligand-domain annotations.
 
-    Final column order (per row):
-      - rank
-      - protein_id
-      - protein_description
-      - domain_id
-      - domain_tag
-      - reference_ligand_id
-      - reference_ligand_score
-      - reference_ligand_smiles
-
-    Parameters
-    ----------
-    annotated_ligands : list of dict
-        Output of attach_domains_to_ligands, containing ligand-domain mapping.
-    base_dir : str or Path
-        Directory containing:
-          - fam_prot_dict.pkl
-          - prot_descriptions.pkl
-    organism : str or int
-        Organism identifier used as key in fam_prot_dict.
-    max_domain_ranks : int
-        Maximum number of domain ranks to include. Domains sharing the same
-        reference score share the same rank. All domains with rank <=
-        max_domain_ranks are kept.
-    include_only_curated : bool
-        If True, only domains reached via 'curated' evidence are considered.
-        If False, domains with 'possible' evidence are also included.
-    show_only_proteins_with_description : bool
-        If True, only proteins that have a description are included.
-        If False, all proteins are included, with description possibly None.
-
-    Returns
-    -------
-    List[dict]
-        List of rows representing candidate proteins.
+    If max_domain_ranks is None, domain rank filtering is disabled and all
+    domains found are kept.
     """
     base_dir = Path(base_dir)
     organism_str = str(organism)
@@ -737,12 +661,13 @@ def build_candidate_proteins_table(
 
     fam_prot_org: Dict[str, List[str]] = fam_prot_dict[organism_str]
 
+    prot_descriptions: Dict[str, Any] = {}  # <-- avoid UnboundLocalError
     prot_desc_path = base_dir / "prot_descriptions.pkl"
     if prot_desc_path.exists():
         with open(prot_desc_path, "rb") as f:
             prot_descriptions = pickle.load(f)
-        # Expected to be a dict: protein_id -> description
-        prot_descriptions = prot_descriptions['description']
+        # Expected: {'description': {protein_id: description, ...}}
+        prot_descriptions = prot_descriptions.get("description", {}) or {}
 
     # 2) Select best reference ligand for each domain
     domain_stats: Dict[str, Dict[str, Any]] = {}
@@ -793,8 +718,10 @@ def build_candidate_proteins_table(
             last_score = score
         entry["rank"] = current_rank
 
-    if max_domain_ranks > 0:
-        domain_list = [d for d in domain_list if d["rank"] <= max_domain_ranks]
+    # NEW: apply rank filter only if max_domain_ranks is not None and > 0
+    if max_domain_ranks is not None and int(max_domain_ranks) > 0:
+        mdr = int(max_domain_ranks)
+        domain_list = [d for d in domain_list if d["rank"] <= mdr]
 
     # 4) Expand to protein-level rows
     rows: List[Dict[str, Any]] = []
