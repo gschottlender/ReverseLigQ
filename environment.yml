@@ -1,34 +1,55 @@
-name: rev_lq_1.5
+name: reverse_ligq_1.5
 channels:
+  - bioconda
+  - schrodinger
   - conda-forge
   - defaults
 dependencies:
   - _libgcc_mutex=0.1
   - _openmp_mutex=5.1
+  - _python_abi3_support=1.0
   - aom=3.12.1
   - asttokens=3.0.0
   - blas=1.0
+  - blast=2.17.0
   - bottleneck=1.4.2
+  - brotli=1.2.0
+  - brotli-bin=1.2.0
   - bzip2=1.0.8
-  - ca-certificates=2025.11.4
+  - c-ares=1.34.6
+  - ca-certificates=2025.11.12
   - cairo=1.18.4
   - charset-normalizer=3.4.4
   - comm=0.2.1
   - contourpy=1.3.1
+  - cpython=3.14.0
+  - curl=8.17.0
   - cycler=0.11.0
   - cyrus-sasl=2.1.28
   - dav1d=1.2.1
   - debugpy=1.8.16
   - decorator=5.2.1
+  - entrez-direct=24.0
   - executing=2.2.1
   - expat=2.7.1
+  - font-ttf-dejavu-sans-mono=2.37
+  - font-ttf-inconsolata=3.000
+  - font-ttf-source-code-pro=2.038
+  - font-ttf-ubuntu=0.83
   - fontconfig=2.15.0
+  - fonts-conda-ecosystem=1
+  - fonts-conda-forge=1
   - fonttools=4.60.1
   - freetype=2.14.1
+  - freetype-py=2.3.0
   - fribidi=1.0.10
   - graphite2=1.3.14
+  - greenlet=3.2.4
+  - gsl=2.7
   - harfbuzz=10.4.0
+  - hmmer=3.4
   - icu=75.1
+  - importlib-metadata=8.7.0
   - ipykernel=6.31.0
   - ipython=9.7.0
   - ipython_pygments_lexers=1.1.1
@@ -36,16 +57,24 @@ dependencies:
   - jpeg=9f
   - jupyter_client=8.6.3
   - jupyter_core=5.8.1
+  - keyutils=1.6.3
   - kiwisolver=1.4.8
   - krb5=1.21.3
   - lcms2=2.16
   - ld_impl_linux-64=2.44
   - lerc=4.0.0
   - libavif=1.1.1
+  - libblas=3.9.0
   - libboost=1.86.0
   - libboost-python=1.86.0
+  - libbrotlicommon=1.2.0
+  - libbrotlidec=1.2.0
+  - libbrotlienc=1.2.0
+  - libcblas=3.9.0
+  - libcurl=8.17.0
   - libdeflate=1.22
   - libedit=3.1.20230828
+  - libev=4.33
   - libevent=2.1.12
   - libexpat=2.7.1
   - libffi=3.4.4
@@ -59,39 +88,72 @@ dependencies:
   - libglib=2.84.4
   - libgomp=15.2.0
   - libiconv=1.18
+  - libidn2=2.3.8
   - libkrb5=1.21.3
   - liblzma=5.8.1
   - liblzma-devel=5.8.1
   - libmpdec=4.0.0
+  - libnghttp2=1.67.0
+  - libntlm=1.8
   - libopenblas=0.3.30
   - libopenjpeg=2.5.4
   - libpng=1.6.50
   - libpq=18.0
   - librdkit=2025.09.2
   - libsodium=1.0.20
+  - libsqlite=3.51.0
+  - libssh2=1.11.1
   - libstdcxx=15.2.0
   - libstdcxx-ng=15.2.0
   - libtiff=4.7.0
+  - libunistring=0.9.10
   - libuuid=1.41.5
   - libwebp-base=1.3.2
   - libxcb=1.17.0
+  - libxcrypt=4.4.36
   - libxml2=2.13.9
   - libzlib=1.3.1
   - lmdb=0.9.31
   - lz4-c=1.9.4
   - matplotlib-base=3.10.6
   - matplotlib-inline=0.2.1
+  - mpi=1.0
+  - munkres=1.1.4
+  - ncbi-vdb=3.3.0
   - ncurses=6.5
   - nest-asyncio=1.5.1
+  - nomkl=1.0
   - numexpr=2.14.1
   - numpy=2.3.4
   - numpy-base=2.3.4
+  - openblas=0.3.30
   - openldap=2.6.10
+  - openmpi=4.1.6
   - openssl=3.6.0
   - packaging=25.0
   - pandas=2.3.3
   - parso=0.8.5
   - pcre2=10.46
+  - perl=5.32.1
+  - perl-archive-tar=3.04
+  - perl-carp=1.38
+  - perl-common-sense=3.75
+  - perl-compress-raw-bzip2=2.214
+  - perl-compress-raw-zlib=2.214
+  - perl-encode=3.19
+  - perl-exporter=5.72
+  - perl-exporter-tiny=1.002002
+  - perl-extutils-makemaker=7.70
+  - perl-io-compress=2.214
+  - perl-io-zlib=1.15
+  - perl-json=4.10
+  - perl-json-xs=4.04
+  - perl-list-moreutils=0.430
+  - perl-list-moreutils-xs=0.430
+  - perl-parent=0.236
+  - perl-pathtools=3.75
+  - perl-scalar-list-utils=1.62
+  - perl-types-serialiser=1.01
   - pexpect=4.9.0
   - pillow=12.0.0
   - pip=25.3
@@ -108,13 +170,16 @@ dependencies:
   - pyparsing=3.2.0
   - python=3.14.0
   - python-dateutil=2.9.0post0
+  - python-gil=3.14.0
   - python-tzdata=2025.2
   - python_abi=3.14
   - pytz=2025.2
   - pyzmq=27.1.0
+  - qhull=2020.2
   - rdkit=2025.09.2
   - readline=8.3
   - reportlab=4.4.3
+  - rlpycairo=0.4.0
   - six=1.17.0
   - sqlalchemy=2.0.43
   - sqlite=3.51.0
@@ -125,7 +190,11 @@ dependencies:
   - typing-extensions=4.15.0
   - typing_extensions=4.15.0
   - tzdata=2025b
+  - unicodedata2=17.0.0
   - wcwidth=0.2.13
+  - wget=1.21.4
+  - xorg-libice=1.1.2
+  - xorg-libsm=1.2.6
   - xorg-libx11=1.8.12
   - xorg-libxau=1.0.12
   - xorg-libxdmcp=1.1.5
@@ -136,12 +205,14 @@ dependencies:
   - xz-gpl-tools=5.8.1
   - xz-tools=5.8.1
   - zeromq=4.3.5
+  - zipp=3.23.0
   - zlib=1.3.1
   - zstd=1.5.7
   - pip:
       - certifi==2025.11.12
       - filelock==3.19.1
       - fsspec==2025.9.0
+      - gemmi==0.7.4
       - hf-xet==1.2.0
       - huggingface-hub==0.36.0
       - idna==3.11
@@ -149,6 +220,22 @@ dependencies:
       - markupsafe==2.1.5
       - mpmath==1.3.0
       - networkx==3.5
+      - nvidia-cublas-cu12==12.8.4.1
+      - nvidia-cuda-cupti-cu12==12.8.90
+      - nvidia-cuda-nvrtc-cu12==12.8.93
+      - nvidia-cuda-runtime-cu12==12.8.90
+      - nvidia-cudnn-cu12==9.10.2.21
+      - nvidia-cufft-cu12==11.3.3.83
+      - nvidia-cufile-cu12==1.13.1.3
+      - nvidia-curand-cu12==10.3.9.90
+      - nvidia-cusolver-cu12==11.7.3.90
+      - nvidia-cusparse-cu12==12.5.8.93
+      - nvidia-cusparselt-cu12==0.7.1
+      - nvidia-nccl-cu12==2.27.5
+      - nvidia-nvjitlink-cu12==12.8.93
+      - nvidia-nvshmem-cu12==3.3.20
+      - nvidia-nvtx-cu12==12.8.90
+      - pyarrow==22.0.0
       - pyyaml==6.0.3
       - regex==2025.11.3
       - requests==2.32.5
@@ -160,4 +247,6 @@ dependencies:
       - torchvision==0.24.1
       - tqdm==4.67.1
       - transformers==4.57.1
+      - triton==3.5.1
       - urllib3==2.5.0
+prefix: /home/gustavo/anaconda3/envs/reverse_ligq_1.5
