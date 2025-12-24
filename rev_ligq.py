@@ -1,15 +1,55 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+ReverseLigQ - master CLI script (single-query or batch CSV)
+
+Dataset layout (expected):
+
+  databases/
+    compound_data/pdb_chembl/
+      ligands.parquet
+      reps/
+        morgan_1024_r2.dat
+        morgan_1024_r2.meta.json
+        chemberta_zinc_base_768.dat
+        chemberta_zinc_base_768.meta.json
+    rev_lq/
+      ligand_lists.pkl
+      ligs_fams_curated.pkl
+      ligs_fams_possible.pkl
+      fam_prot_dict.pkl
+      prot_descriptions.pkl
+
+Modes:
+  1) Single query: provide --query-smiles and --organism
+  2) Batch mode: provide --query-csv with columns: lig_id, smiles
+
+Batch outputs:
+  <out_dir>/<lig_id>/
+      predicted_targets.csv
+      similarity_search_results.csv
+
+Notes:
+- Similarity search uses a threshold (min_score) AND a cap (k_max_ligands).
+  This prevents huge intermediate results and keeps memory usage bounded.
+- In batch mode, the searcher is constructed once and reused for all queries
+  (important for ChemBERTa model loading time).
+"""
+
 from __future__ import annotations
 
 import argparse
 import os
+import re
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 from rdkit import RDLogger
+
 RDLogger.DisableLog("rdApp.*")
 
-from search_tools.target_finding import (
+from search_tools.target_finding import (  # noqa: E402
     get_dataset,
     ChembertaSearcher,
     MorganTanimotoSearcher,
@@ -19,227 +59,475 @@ from search_tools.target_finding import (
 )
 
 
+# -------------------------------------------------------------------------
+# CLI helpers
+# -------------------------------------------------------------------------
+def _optional_int(x: str) -> Optional[int]:
+    """
+    Argparse helper: allow passing None from CLI.
+
+    Accepted values for None: "none", "null", "" (case-insensitive).
+    Otherwise parses int.
+    """
+    if x is None:
+        return None
+    s = str(x).strip().lower()
+    if s in {"none", "null", ""}:
+        return None
+    return int(s)
+
+
+def _safe_dirname(name: str, fallback: str = "query") -> str:
+    """
+    Make a safe folder name from an arbitrary ligand id:
+    - strips leading/trailing whitespace
+    - replaces path separators and unsafe chars with '_'
+    - avoids empty names
+    """
+    s = str(name).strip()
+    if not s:
+        return fallback
+    # Replace path separators and any unsafe characters
+    s = s.replace(os.sep, "_")
+    s = s.replace("/", "_")
+    s = re.sub(r"[^A-Za-z0-9._-]+", "_", s)
+    # Avoid "." or ".."
+    if s in {".", ".."}:
+        return fallback
+    return s
+
+
 def parse_args() -> argparse.Namespace:
-    """
-    Parse command-line arguments for the target search pipeline.
-
-    Returns
-    -------
-    argparse.Namespace
-        Parsed arguments.
-    """
     parser = argparse.ArgumentParser(
-        description="Run ligand similarity search and target (protein) prediction "
-                    "using ReverseLigQ datasets."
+        description=(
+            "ReverseLigQ target search. "
+            "Runs ligand similarity search (Morgan+Tanimoto or ChemBERTa+cosine), "
+            "then maps hit ligands to Pfam domains and candidate proteins."
+        )
     )
 
-    parser.add_argument(
-        "--query-smiles",
-        type=str,
-        required=True,
-        help="Query molecule SMILES string.",
-    )
-
+    # Required organism (still required in both modes)
     parser.add_argument(
         "--organism",
         type=str,
         required=True,
-        help=""""Select organism number: 1- Bartonella bacilliformis, 2- Klebsiella pneumoniae, 3- Mycobacterium tuberculosis, 
-        4- Trypanosoma cruzi, 5- Staphylococcus aureus RF122, 6- Streptococcus uberis 0140J, 7- Enterococcus faecium, 
-        8- Escherichia coli MG1655, 9- Streptococcus agalactiae NEM316, 10- Pseudomonas syringae, 
-        11- DENV (dengue virus), 12- SARS-CoV-2, 13- Homo sapiens""",
+        help="Organism key used in rev_lq/ligand_lists.pkl (required).",
     )
 
-    parser.add_argument(
-        "--local-dir",
+    # Query input: either a single SMILES or a CSV batch
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--query-smiles",
         type=str,
-        default="data",
-        help="Local directory where the ReverseLigQ dataset is stored or will be downloaded.",
+        default=None,
+        help="Query molecule SMILES string (single-query mode).",
+    )
+    group.add_argument(
+        "--query-csv",
+        type=str,
+        default=None,
+        help=(
+            "CSV file for batch mode. Must contain columns: lig_id, smiles. "
+            "Each row is run as an independent query."
+        ),
     )
 
+    # Data directories (as requested)
+    parser.add_argument(
+        "--compound-dir",
+        type=str,
+        default="databases/compound_data/pdb_chembl",
+        help=(
+            "Directory containing compound index + representations (LigandStore root): "
+            "ligands.parquet and reps/<rep_name>.dat + reps/<rep_name>.meta.json. "
+            "Default: databases/compound_data/pdb_chembl"
+        ),
+    )
+    parser.add_argument(
+        "--rev-dir",
+        type=str,
+        default="databases/rev_ligq",
+        help=(
+            "Directory containing ReverseLigQ metadata: ligand_lists.pkl, "
+            "ligs_fams_curated.pkl, ligs_fams_possible.pkl, fam_prot_dict.pkl, "
+            "prot_descriptions.pkl (optional), etc. "
+            "Default: databases/rev_lq"
+        ),
+    )
+
+    # Output directory
     parser.add_argument(
         "--out-dir",
         type=str,
         default="results",
-        help="Output directory where result tables will be written.",
+        help="Output directory where result tables will be written. Default: results",
     )
 
+    # Search mode (default must be Tanimoto)
     parser.add_argument(
         "--search-type",
         type=str,
         default="morgan_fp_tanimoto",
         choices=["morgan_fp_tanimoto", "chemberta"],
-        help="Type of similarity search to perform: "
-             "'morgan_fp_tanimoto' (fingerprints + Tanimoto) or 'chemberta' (ChemBERTa embeddings).",
+        help=(
+            "Ligand similarity model. Default: morgan_fp_tanimoto. "
+            "Options: morgan_fp_tanimoto (Morgan+Tanimoto), chemberta (ChemBERTa+cosine)."
+        ),
     )
 
+    # Threshold (default 0.4 for Tanimoto; 0.8 for ChemBERTa)
     parser.add_argument(
-        "--top-k-ligands",
+        "--min-score",
+        type=float,
+        default=None,
+        help=(
+            "Similarity threshold. If omitted, defaults are applied by search type: "
+            "0.4 for morgan_fp_tanimoto, 0.8 for chemberta."
+        ),
+    )
+
+    # k_max (memory safety cap)
+    parser.add_argument(
+        "--k-max-ligands",
         type=int,
         default=1000,
-        help="Maximum number of ligand neighbors to retrieve in the similarity search.",
+        help=(
+            "Maximum number of ligand hits to keep AFTER applying the threshold. "
+            "Default: 1000 (memory-safe). "
+            "Increase if you want more hits, but higher values can increase RAM usage "
+            "(especially in downstream annotation steps)."
+        ),
     )
 
+    # Stream chunk size (optional but useful)
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=50_000,
+        help=(
+            "Chunk size (number of organism ligands processed per iteration) when streaming "
+            "over the memmap. Default: 50000. "
+            "Lower values use less RAM but can be slower."
+        ),
+    )
+
+    # Downstream options
     parser.add_argument(
         "--max-domain-ranks",
-        type=int,
+        type=_optional_int,
         default=10,
-        help="Maximum number of domain ranks to keep in the final target (protein) table. "
-             "Domains sharing the same reference score share the same rank.",
+        help=(
+            "Maximum number of domain ranks to keep in the final protein table. "
+            "Default: 10. "
+            "Pass 'none' to keep ALL domain ranks (no truncation)."
+        ),
     )
-
     parser.add_argument(
         "--include-only-curated",
         action="store_true",
-        help="If set, only domains reached via 'curated' evidence will be considered.",
+        help="If set, only domains reached via 'curated' evidence are considered.",
     )
-
     parser.add_argument(
         "--only-proteins-with-description",
         action="store_true",
-        help="If set, only proteins that have a description will be included in the final table.",
+        help="If set, only proteins that have a description are kept.",
+    )
+
+    # ChemBERTa controls (only used when --search-type chemberta)
+    parser.add_argument(
+        "--chemberta-model",
+        type=str,
+        default="seyonec/ChemBERTa-zinc-base-v1",
+        help="Hugging Face model name/path for ChemBERTa. Default: seyonec/ChemBERTa-zinc-base-v1",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help=(
+            "Device for ChemBERTa query embedding: 'cpu' or 'cuda'. "
+            "If omitted, defaults to CUDA if available, else CPU."
+        ),
+    )
+    parser.add_argument(
+        "--max-length",
+        type=int,
+        default=256,
+        help="Max token length for ChemBERTa query SMILES. Default: 256.",
     )
 
     return parser.parse_args()
 
 
-def target_search(
-    query_smiles: str,
+# -------------------------------------------------------------------------
+# Dataset existence / download
+# -------------------------------------------------------------------------
+def _ensure_dataset(compound_dir: Path, rev_dir: Path) -> None:
+    """
+    If compound_dir or rev_dir is missing, download the dataset into the common parent
+    directory using get_dataset(local_dir=...).
+
+    This matches your get_dataset() implementation, which downloads a full dataset snapshot
+    rooted at local_dir (typically 'databases').
+    """
+    if compound_dir.exists() and rev_dir.exists():
+        return
+
+    common_parent = Path(os.path.commonpath([str(compound_dir), str(rev_dir)]))
+    common_parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"[INFO] Missing dataset folders. Downloading dataset into: {common_parent}")
+    get_dataset(local_dir=str(common_parent))
+
+    if not compound_dir.exists():
+        raise FileNotFoundError(
+            f"Compound dir still missing after download: {compound_dir} "
+            f"(expected ligands.parquet and reps/ inside)."
+        )
+    if not rev_dir.exists():
+        raise FileNotFoundError(
+            f"ReverseLigQ dir still missing after download: {rev_dir} "
+            f"(expected ligand_lists.pkl etc. inside)."
+        )
+
+
+# -------------------------------------------------------------------------
+# Core pipeline primitives (build once; run many queries)
+# -------------------------------------------------------------------------
+def build_searcher(
     organism: str,
-    base_dir: str | Path,
-    top_k_ligands: int = 1000,
-    max_domain_ranks: int = 10,
-    include_only_curated: bool = False,
-    only_proteins_with_description: bool = False,
-    search_type: str = "morgan_fp_tanimoto",
+    compound_dir: Path,
+    rev_dir: Path,
+    search_type: str,
+    min_score: Optional[float],
+    k_max_ligands: int,
+    chunk_size: int,
+    chemberta_model: str,
+    device: Optional[str],
+    max_length: int,
 ):
     """
-    Run the full target search pipeline for a single query SMILES and organism.
-
-    Steps:
-      1. Build the appropriate searcher (Morgan+Tanimoto or ChemBERTa).
-      2. Perform similarity search in the ligand space (top-k ligands).
-      3. Attach curated/possible domains to each ligand.
-      4. Build the final candidate proteins table (domain- and protein-level).
-      5. Build the ligand-level similarity summary table.
-
-    Parameters
-    ----------
-    query_smiles : str
-        Query molecule in SMILES format.
-    organism : str
-        Organism identifier.
-    base_dir : str or Path
-        Directory containing ReverseLigQ data files
-        (comps_fps.npy, comps_embs.npy, ligand_lists.pkl, etc.).
-    top_k_ligands : int
-        Number of nearest ligands to retrieve in the similarity search.
-    max_domain_ranks : int
-        Maximum number of domain ranks to keep in the final protein table.
-    include_only_curated : bool
-        If True, only domains with 'curated' evidence are considered.
-    only_proteins_with_description : bool
-        If True, only proteins with a description are included.
-    search_type : str
-        'morgan_fp_tanimoto' or 'chemberta'.
-
-    Returns
-    -------
-    target_search_df : pandas.DataFrame
-        Protein-level candidate targets table.
-    similarity_search_df : pandas.DataFrame
-        Ligand-level similarity search summary table.
+    Construct and return the appropriate searcher (MorganTanimotoSearcher or ChembertaSearcher)
+    using your .from_defaults() APIs. The searcher caches representation + indices and can be
+    reused across multiple queries.
     """
-    base_dir = Path(base_dir)
+    if min_score is None:
+        min_score = 0.4 if search_type == "morgan_fp_tanimoto" else 0.8
 
-    # Select searcher type
+    ligand_lists_path = rev_dir / "ligand_lists.pkl"
+
     if search_type == "morgan_fp_tanimoto":
-        searcher = MorganTanimotoSearcher.from_paths(
-            base_dir=base_dir,
-            organism=organism,
+        return MorganTanimotoSearcher.from_defaults(
+            organism=str(organism),
+            store_root=compound_dir,
+            ligand_lists_path=ligand_lists_path,
+            rep_name="morgan_1024_r2",
+            min_score=float(min_score),
+            k_max=int(k_max_ligands),
+            chunk_size=int(chunk_size),
         )
-    elif search_type == "chemberta":
-        searcher = ChembertaSearcher.from_paths(
-            base_dir=base_dir,
-            organism=organism,
-            model_name="seyonec/ChemBERTa-zinc-base-v1",
-            device="cpu",
+
+    if search_type == "chemberta":
+        return ChembertaSearcher.from_defaults(
+            organism=str(organism),
+            store_root=compound_dir,
+            ligand_lists_path=ligand_lists_path,
+            rep_name="chemberta_zinc_base_768",
+            model_name=chemberta_model,
+            device=device,
+            max_length=int(max_length),
+            min_score=float(min_score),
+            k_max=int(k_max_ligands),
+            chunk_size=int(chunk_size),
         )
-    else:
-        raise ValueError(f"Unsupported search_type: {search_type!r}")
 
-    # 1) Ligand similarity search
-    ligand_results = searcher.search(query_smiles, top_k=top_k_ligands)
+    raise ValueError(f"Unsupported search_type: {search_type!r}")
 
-    # 2) Attach curated/possible domains to each ligand
+
+def run_one_query(
+    searcher,
+    query_smiles: str,
+    organism: str,
+    rev_dir: Path,
+    max_domain_ranks: Optional[int],
+    include_only_curated: bool,
+    only_proteins_with_description: bool,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Execute:
+      1) ligand similarity search (threshold + k_max already handled in searcher)
+      2) attach domains (curated/possible)
+      3) candidate proteins table
+      4) ligand summary table
+    """
+    ligand_results = searcher.search(query_smiles)
+
     annotated = attach_domains_to_ligands(
         ligand_results=ligand_results,
-        base_dir=base_dir,
+        base_dir=rev_dir,
     )
 
-    # 3) Build protein-level candidate targets table
     target_search_table = build_candidate_proteins_table(
         annotated_ligands=annotated,
-        base_dir=base_dir,
+        base_dir=rev_dir,
         organism=organism,
-        max_domain_ranks=max_domain_ranks,
+        max_domain_ranks=max_domain_ranks,  # should support None now
         include_only_curated=include_only_curated,
         show_only_proteins_with_description=only_proteins_with_description,
     )
-    target_search_df = pd.DataFrame(target_search_table)
-    target_search_df = target_search_df.sort_values(
-                        by=["rank", "domain_id"],
-                        ascending=[True, True]
-                        ).reset_index(drop=True)
-    # 4) Build ligand-level similarity summary table
-    similarity_search_df = build_ligand_summary_dataframe(annotated)
 
-    return target_search_df, similarity_search_df
+    target_df = pd.DataFrame(target_search_table)
+    if not target_df.empty:
+        target_df = (
+            target_df.sort_values(by=["rank", "domain_id"], ascending=[True, True])
+            .reset_index(drop=True)
+        )
+
+    lig_df = build_ligand_summary_dataframe(annotated)
+    return target_df, lig_df
 
 
+# -------------------------------------------------------------------------
+# Batch input
+# -------------------------------------------------------------------------
+def load_batch_csv(path: str | Path) -> pd.DataFrame:
+    """
+    Read batch CSV with required columns: lig_id, smiles.
+
+    Returns a DataFrame with both columns as string dtype, dropping rows where smiles is empty.
+    """
+    path = Path(path)
+    df = pd.read_csv(path)
+
+    required = {"lig_id", "smiles"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Batch CSV is missing required columns: {sorted(missing)}. Found: {list(df.columns)}")
+
+    df = df.copy()
+    df["lig_id"] = df["lig_id"].astype(str)
+    df["smiles"] = df["smiles"].astype(str)
+
+    # Drop empties / NaNs
+    df["smiles"] = df["smiles"].fillna("").astype(str).str.strip()
+    df = df[df["smiles"] != ""].reset_index(drop=True)
+
+    if df.empty:
+        raise ValueError("Batch CSV has no valid rows after filtering empty SMILES.")
+    return df
+
+
+# -------------------------------------------------------------------------
+# Main
+# -------------------------------------------------------------------------
 def main() -> None:
-    """
-    Entry point for the command-line interface.
-
-    - Ensures the dataset is available (downloads if missing).
-    - Runs the target search pipeline.
-    - Writes CSV files with predicted targets and similarity search results.
-    """
     args = parse_args()
 
-    local_dir = Path(args.local_dir)
+    compound_dir = Path(args.compound_dir)
+    rev_dir = Path(args.rev_dir)
     out_dir = Path(args.out_dir)
-
-    # Ensure dataset is available: if local_dir does not exist, download it
-    if not local_dir.exists():
-        local_dir.mkdir(parents=True, exist_ok=True)
-        # Download ReverseLigQ dataset into local_dir
-        get_dataset(local_dir=str(local_dir))
-
-    # Ensure output directory exists
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Run the target search pipeline
-    target_search_df, similarity_search_df = target_search(
-        query_smiles=args.query_smiles,
+    _ensure_dataset(compound_dir=compound_dir, rev_dir=rev_dir)
+
+    # Build once (important for ChemBERTa)
+    searcher = build_searcher(
         organism=args.organism,
-        base_dir=local_dir,
-        top_k_ligands=args.top_k_ligands,
-        max_domain_ranks=args.max_domain_ranks,
-        include_only_curated=args.include_only_curated,
-        only_proteins_with_description=args.only_proteins_with_description,
+        compound_dir=compound_dir,
+        rev_dir=rev_dir,
         search_type=args.search_type,
+        min_score=args.min_score,
+        k_max_ligands=args.k_max_ligands,
+        chunk_size=args.chunk_size,
+        chemberta_model=args.chemberta_model,
+        device=args.device,
+        max_length=args.max_length,
     )
 
-    # Save outputs as CSV
-    target_csv_path = out_dir / "predicted_targets.csv"
-    similarity_csv_path = out_dir / "similarity_search_results.csv"
+    if args.query_smiles is not None:
+        # Single query mode
+        target_df, lig_df = run_one_query(
+            searcher=searcher,
+            query_smiles=args.query_smiles,
+            organism=args.organism,
+            rev_dir=rev_dir,
+            max_domain_ranks=args.max_domain_ranks,
+            include_only_curated=args.include_only_curated,
+            only_proteins_with_description=args.only_proteins_with_description,
+        )
 
-    target_search_df.to_csv(target_csv_path, index=False)
-    similarity_search_df.to_csv(similarity_csv_path, index=False)
+        target_csv = out_dir / "predicted_targets.csv"
+        lig_csv = out_dir / "similarity_search_results.csv"
+        target_df.to_csv(target_csv, index=False)
+        lig_df.to_csv(lig_csv, index=False)
 
-    print(f"[INFO] Target search results written to: {target_csv_path}")
-    print(f"[INFO] Similarity search results written to: {similarity_csv_path}")
+        print(f"[INFO] Wrote: {target_csv}")
+        print(f"[INFO] Wrote: {lig_csv}")
+        return
+
+    # Batch mode
+    batch_df = load_batch_csv(args.query_csv)
+    n = len(batch_df)
+    print(f"[INFO] Batch mode: {n} queries loaded from {args.query_csv}")
+
+    # Optional: write a small run log
+    log_rows: List[Dict[str, Any]] = []
+
+    for i, row in batch_df.iterrows():
+        lig_id = row["lig_id"]
+        smi = row["smiles"]
+        safe_id = _safe_dirname(lig_id, fallback=f"query_{i+1}")
+        q_dir = out_dir / safe_id
+        q_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            target_df, lig_df = run_one_query(
+                searcher=searcher,
+                query_smiles=smi,
+                organism=args.organism,
+                rev_dir=rev_dir,
+                max_domain_ranks=args.max_domain_ranks,
+                include_only_curated=args.include_only_curated,
+                only_proteins_with_description=args.only_proteins_with_description,
+            )
+
+            target_csv = q_dir / "predicted_targets.csv"
+            lig_csv = q_dir / "similarity_search_results.csv"
+            target_df.to_csv(target_csv, index=False)
+            lig_df.to_csv(lig_csv, index=False)
+
+            print(f"[{i+1}/{n}] lig_id={lig_id!r} -> OK ({safe_id})")
+            log_rows.append(
+                {
+                    "lig_id": lig_id,
+                    "smiles": smi,
+                    "out_dir": str(q_dir),
+                    "status": "ok",
+                    "n_ligand_hits": int(len(lig_df)),
+                    "n_target_rows": int(len(target_df)),
+                }
+            )
+
+        except Exception as e:
+            # Keep going
+            err_path = q_dir / "error.txt"
+            err_path.write_text(str(e), encoding="utf-8")
+            print(f"[{i+1}/{n}] lig_id={lig_id!r} -> ERROR ({safe_id}): {e}")
+            log_rows.append(
+                {
+                    "lig_id": lig_id,
+                    "smiles": smi,
+                    "out_dir": str(q_dir),
+                    "status": "error",
+                    "error": str(e),
+                }
+            )
+
+    # Write batch log
+    log_df = pd.DataFrame(log_rows)
+    log_csv = out_dir / "batch_run_log.csv"
+    log_df.to_csv(log_csv, index=False)
+    print(f"[INFO] Batch log written: {log_csv}")
 
 
 if __name__ == "__main__":
