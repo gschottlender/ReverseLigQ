@@ -32,6 +32,7 @@ def get_dataset(local_dir: str = "data") -> None:
     )
 
 
+# Estas clases van a dejar de usarse
 class ChembertaSearcher:
     """
     Similarity searcher based on ChemBERTa embeddings for a single organism.
