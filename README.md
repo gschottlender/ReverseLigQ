@@ -1,235 +1,197 @@
-# ReverseLigQ
+---
+language: en
+pretty_name: ReverseLigQ dataset
+tags:
+  - drug-discovery
+  - cheminformatics
+  - bioinformatics
+  - virtual-screening
+  - similarity-search
+license: other
+---
 
-ReverseLigQ retrieves candidate binding target proteins from various pathogenic organisms (and human) for a query ligand using an unsupervised, similarity-based approach. Candidate targets are inferred from compounds with known binding domains, combining:
+# ReverseLigQ (dataset + search scripts)
 
-- Ligand similarity search (Morgan fingerprints + Tanimoto, or ChemBERTa embeddings).
-- Mapping ligands to Pfam domains and proteins.
+ReverseLigQ is a lightweight dataset layout (plus reference scripts) to run **“reverse ligand → target”** searches at proteome scale:
 
-This repository provides a **command-line interface** (`rev_ligq.py`) to run the full pipeline for a single query SMILES and organism.  
+1. **Ligand similarity search** within a selected organism (Morgan/Tanimoto or ChemBERTa/cosine).
+2. **Domain annotation** (Pfam) for the retrieved ligands.
+3. **Candidate target proteins** for that organism (domain → protein mapping).
+
+This repo is published as a **Hugging Face dataset** and uses **Git LFS** for large binary files.
 
 ---
 
-## Table of Contents
+## Repository layout (expected on disk)
 
-- [Requirements](#requirements)  
-- [Installation](#installation)  
-- [Data and datasets](#data-and-datasets)  
-- [Usage (command line)](#usage-command-line)  
-  - [Supported organisms](#supported-organisms)  
-  - [Main arguments](#main-arguments)  
-  - [Choosing the similarity backend](#choosing-the-similarity-backend)  
-- [Outputs](#outputs)  
-- [Programmatic usage (Python API)](#programmatic-usage-python-api)  
-- [Features](#features)  
-- [Contributors and citation](#contributors-and-citation)  
-- [License](#license)
+After downloading the dataset snapshot, you should have:
+
+```
+databases/
+  compound_data/
+    pdb_chembl/
+      ligands.parquet
+      reps/
+        chemberta_zinc_base_768.dat
+        chemberta_zinc_base_768.meta.json
+        morgan_1024_r2.dat
+        morgan_1024_r2.meta.json
+  rev_ligq/
+    fam_prot_dict.pkl
+    ligand_lists.pkl
+    ligs_fams_curated.pkl
+    ligs_fams_possible.pkl
+    prot_descriptions.pkl
+```
+
+Two roots matter:
+
+- `databases/compound_data/pdb_chembl/`  
+  **LigandStore root**: compound index (`ligands.parquet`) + representations (`reps/`).
+
+- `databases/rev_ligq/`  
+  ReverseLigQ metadata: organism ligand lists, ligand→Pfam mappings, Pfam→protein mapping, protein descriptions.
 
 ---
 
-## Requirements
+## Downloading the dataset
 
-- **Python**: 3.8+  
-- Dependencies:
-  - `conda`
-  - `rdkit`
-  - `numpy`, `pandas`
-  - `torch`, `transformers`, `huggingface_hub`
+### Automatic
+Both `rev_ligq.py` and `update_rev_ligq.py` will **auto-download** the dataset snapshot (via `snapshot_download`) if required folders are missing, placing it under the common parent (default: `databases/`).
 
 ---
 
-## Installation
+## Organism-specific datasets
 
-### 1. Clone the repository
+ReverseLigQ integrates multiple organisms, each identified by an integer key.
+
+| Key | Organism |
+|---:|---|
+| 1 | *Bartonella bacilliformis* |
+| 2 | *Klebsiella pneumoniae* |
+| 3 | *Mycobacterium tuberculosis* |
+| 4 | *Trypanosoma cruzi* |
+| 5 | *Staphylococcus aureus* RF122 |
+| 6 | *Streptococcus uberis* 0140J |
+| 7 | *Enterococcus faecium* |
+| 8 | *Escherichia coli* MG1655 |
+| 9 | *Streptococcus agalactiae* NEM316 |
+| 10 | *Pseudomonas syringae* |
+| 11 | DENV (Dengue virus) |
+| 12 | SARS‑CoV‑2 |
+| 13 | *Homo sapiens* |
+
+---
+
+## Search script (rev_ligq.py)
+
+### Single query (default: Morgan/Tanimoto)
+
+- Default search type: **Morgan fingerprint + Tanimoto**
+- Default threshold: **0.4**
+- Default neighbor cap (`k_max`): **1000** (important to avoid excessive RAM usage)
 
 ```bash
-git clone https://github.com/gschottlender/ReverseLigQ.git
-cd ReverseLigQ
+python rev_ligq.py   --organism 13   --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O"   --out-dir results
 ```
 
-### 2. Create environment
+### ChemBERTa (cosine)
+- Default threshold: **0.8**
+- Uses `seyonec/ChemBERTa-zinc-base-v1` to embed the query SMILES.
 
 ```bash
-conda env create -f environment.yml -n reverse_ligq
-conda activate reverse_ligq
+python rev_ligq.py --organism 13 --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O" --search-type chemberta --out-dir results
 ```
 
-### 3. Optional executable
+### Key arguments (most used)
+
+- `--organism` *(required)*: organism key (see table above).
+- `--query-smiles` *(required unless --query-csv)*: query molecule SMILES.
+- `--query-csv` *(optional)*: batch mode CSV (see below).
+- `--search-type`: `morgan_fp_tanimoto` (default) or `chemberta`.
+- `--min-score`: threshold (default 0.4 for Tanimoto, 0.8 for ChemBERTa).
+- `--k-max-ligands`: cap on returned neighbors after thresholding (default 1000).  
+  This is mainly a **memory/time safety**. Increase carefully.
+- `--max-domain-ranks`: how many domain ranks to keep in the final protein table.  
+  Set to `None` to keep **all** discovered domains.
+- `--compound-dir`: default `databases/compound_data/pdb_chembl`.
+- `--rev-dir`: default `databases/rev_ligq`.
+- `--out-dir`: output directory (default: `results/`).
+- `--chunk-size`: streaming chunk size for memmap scanning (default 50,000).
+
+---
+
+## Batch mode (CSV input)
+
+Instead of a single SMILES, you can pass a CSV with **two columns**:
+
+- `lig_id`: your identifier for the query (used to name the output folder)
+- `smiles`: the query SMILES
+
+Example file (`queries.csv`):
+
+```csv
+lig_id,smiles
+aspirin,CC(=O)OC1=CC=CC=C1C(=O)O
+caffeine,CN1C(=O)N(C)c2ncn(C)c2C1=O
+```
+
+Run:
 
 ```bash
-chmod +x rev_ligq.py
+python rev_ligq.py --organism 13 --query-csv queries.csv --out-dir results
 ```
 
+### Batch outputs
+
+For each row in the CSV, results are written to:
+
+```
+results/<lig_id>/
+  predicted_targets.csv
+  similarity_search_results.csv
+```
+
+Batch runs may also write a summary log under `results/` (depending on your script options), typically containing per-query status and errors.
+
 ---
 
-## Data and datasets
+## Output files
 
-ReverseLigQ uses a dataset stored in `data/` by default.  
-If absent, it will be automatically downloaded from the HuggingFace repository on first run:
+Per query you get:
 
-Dataset link:  
-👉 **https://huggingface.co/datasets/gschottlender/reverse_ligq**
+- `predicted_targets.csv`  
+  Protein-level candidate targets table (ranked domains expanded to proteins).
 
-Contents include fingerprints/embeddings, SMILES dictionaries, ligand lists, domain mappings, and protein descriptions.
+- `similarity_search_results.csv`  
+  Ligand-level similarity results (rank, comp_id, score, smiles, domains/tags).
 
 ---
 
-## Usage (command line)
+## Updating / rebuilding the dataset (update_rev_ligq.py)
 
-### Basic example
+`update_rev_ligq.py` is the “database builder” script used to **regenerate** the dataset artifacts querying latest PDB and ChEMBL databases:
+- merged ligand–domain evidence tables,
+- organism-specific ligand lists,
+- ligand→Pfam dictionaries (curated / possible),
+- Pfam→protein mapping, protein descriptions,
+- and refreshed compound data directories (takes 8-10 hours using CPU, faster using GPU to generate ChemBERTa embeddings).
+
+Typical usage (requirse to specify chembl version to update):
 
 ```bash
-python rev_ligq.py   --query-smiles "CCCCCOCCN"   --organism 2
+python update_rev_ligq.py --chembl-version 36 --output-dir databases
 ```
 
-### Example using ChemBERTa
-
-```bash
-python rev_ligq.py   --query-smiles "CCCCCOCCN"   --organism 2 --search-type chemberta
-```
-
-### Supported organisms
-
-1. Bartonella bacilliformis  
-2. Klebsiella pneumoniae  
-3. Mycobacterium tuberculosis  
-4. Trypanosoma cruzi  
-5. Staphylococcus aureus RF122  
-6. Streptococcus uberis 0140J  
-7. Enterococcus faecium  
-8. Escherichia coli MG1655  
-9. Streptococcus agalactiae NEM316  
-10. Pseudomonas syringae  
-11. DENV  
-12. SARS-CoV-2  
-13. Homo sapiens  
-
-### Main arguments
-
-Below is a detailed description of the main parameters of `rev_ligq.py`:
-
--   **`--query-smiles`** *(required)*\
-    The **SMILES string** of the query ligand.\
-    This is the core input: the entire pipeline is built around
-    comparing this ligand to all compounds in the dataset.
-
--   **`--organism`** *(required)*\
-    Numeric ID of the organism (1--13).\
-    Determines which organism's protein set will be used when mapping
-    domains to candidate targets.\
-    The full organism list is provided in the *Supported organisms*
-    section.
-
--   **`--local-dir`** *(default: `data/`)*\
-    Directory where the ReverseLigQ dataset is stored.\
-    If it does not exist, the dataset will be automatically downloaded
-    from HuggingFace into this folder.
-
--   **`--out-dir`** *(default: `results/`)*\
-    Directory where output files will be saved, including:
-
-    -   `predicted_targets.csv`\
-    -   `similarity_search_results.csv`
-
--   **`--search-type`** *(default: `morgan_fp_tanimoto`)*\
-    Method used for ligand similarity search:
-
-    -   `morgan_fp_tanimoto`: fast, lightweight, RDKit-based fingerprint
-        similarity.\
-    -   `chemberta`: uses ChemBERTa transformer embeddings; slower but
-        can capture richer chemical patterns.
-
--   **`--top-k-ligands`** *(default: `1000`)*\
-    Number of most similar ligands retrieved during similarity search.\
-    Higher values may increase recall of relevant domains but also
-    increase computation time.
-
--   **`--max-domain-ranks`** *(default: `10`)*\
-    Maximum number of **domain ranks** to include in the final protein
-    table.\
-    Ranks are based on similarity scores of the reference ligands;
-    domains with equal scores share the same rank.
-
--   **`--include-only-curated`** *(flag)*\
-    If set, only **curated** ligand--domain associations are used when
-    inferring protein targets.\
-    If not set, both curated and possible associations are included.
-
--   **`--only-proteins-with-description`** *(flag)*\
-    If set, only proteins with an available functional description will
-    be included in the final table.\
-    If not set, all proteins are included regardless of annotation
-    completeness.
-
-### Choosing the similarity backend
-
-- **Morgan + Tanimoto**: fastest, minimal dependencies  
-- **ChemBERTa**: transformer-based, slower but richer
+Notes:
+- The script writes the same expected structure described in **Repository layout**.
 
 ---
 
-## Outputs
+## Citation
 
-Running the CLI produces:
+If you use these datasets, please cite:
 
-### 1. `predicted_targets.csv`
-Candidate protein targets with domain evidence and similarity scores.
-
-### 2. `similarity_search_results.csv`
-Ligand similarity ranking and associated domain summaries.
-
-#### Interpretation of `domain_tag`
-
-The column **`domain_tag`** in the predicted_targets.csv output file indicates the type of evidence supporting the ligand–domain association derived from the reference ligand:
-
-- **`curated`**  
-  Indicates that the **binding domain of the reference ligand is experimentally confirmed**.  
-  These associations originate from ligands whose interaction with a specific Pfam domain has been validated in curated datasets.  
-  As such, curated tags represent **high-confidence binding domain assignments**.
-
-- **`possible`**  
-  Indicates that the **ligand is known to bind a multidomain protein**, but the **exact binding domain is not experimentally resolved**.  
-  In these cases, multiple domains are present in the protein, and although the ligand–protein interaction is supported by experimental data, the **precise domain-level binding site remains undetermined**.  
-  Therefore, possible tags denote **putative binding domains** inferred from proteins with multiple domains rather than confirmed, domain-specific evidence.
-
----
-
-## Programmatic usage (Python API)
-
-```python
-from pathlib import Path
-from rev_ligq import target_search
-
-targets_df, ligands_df = target_search(
-    query_smiles="CCCCCOCCN",
-    organism="2",
-    base_dir=Path("data")
-)
-```
-
----
-
-## Features
-
-- Ligand similarity search (Morgan / ChemBERTa)  
-- Mapping to Pfam domains (curated + possible)  
-- Aggregation to protein-level targets  
-- Human organism supported (ID 13)
-
----
-
-## Contributors and citation
-
-If you use this tool, please cite:
-
-**Schottlender et al. (2022)**  
-*From drugs to targets: reverse engineering the virtual screening process on a proteomic scale.*  
-Front. Drug Discov. 2:969983. https://doi.org/10.3389/fddsv.2022.969983
-
----
-
-## License
-
-This project is licensed under the **MIT License**.
-
----
-
+Schottlender G, Prieto JM, Palumbo MC, Castello FA, Serral F, Sosa EJ, Turjanski AG, Martí MA and Fernández Do Porto D (2022).  
+*From drugs to targets: Reverse engineering the virtual screening process on a proteomic scale.* Front. Drug. Discov. 2:969983.  
+doi: 10.3389/fddsv.2022.969983
