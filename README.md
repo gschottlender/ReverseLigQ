@@ -1,14 +1,3 @@
----
-language: en
-pretty_name: ReverseLigQ dataset
-tags:
-  - drug-discovery
-  - cheminformatics
-  - bioinformatics
-  - virtual-screening
-  - similarity-search
-license: other
----
 
 # ReverseLigQ (dataset + search scripts)
 
