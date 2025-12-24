@@ -5,7 +5,7 @@ import json
 import argparse
 from datetime import date
 
-from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 
 from update.pdb_db import (
     generate_pdb_database,
@@ -17,6 +17,62 @@ from update.rev_ligq_db import generate_rev_ligq_databases
 
 # HuggingFace dataset repo with the preprocessed databases and initial metadata
 HF_DATASET_REPO_ID = "gschottlender/LigQ_2"
+
+
+# ReverseLigQ dataset snapshot (contains compound_data/pdb_chembl and rev_ligq/)
+REVERSE_LIGQ_DATASET_REPO_ID = "gschottlender/reverse_ligq"
+
+
+def get_reverse_ligq_dataset(local_dir: str = "databases") -> None:
+    """
+    Download the ReverseLigQ dataset snapshot from Hugging Face into `local_dir`.
+
+    This mirrors the behavior used by the search script: the dataset root will be
+    created under `local_dir`, including:
+      - compound_data/pdb_chembl/...
+      - rev_ligq/...
+
+    Parameters
+    ----------
+    local_dir : str
+        Local directory where the dataset will be stored.
+    """
+    snapshot_download(
+        repo_id=REVERSE_LIGQ_DATASET_REPO_ID,
+        repo_type="dataset",
+        local_dir=local_dir,
+        local_dir_use_symlinks=False,
+    )
+
+
+def _ensure_reverse_ligq_dataset(compound_dir: Path, rev_dir: Path) -> None:
+    """
+    If `compound_dir` or `rev_dir` is missing, download the ReverseLigQ snapshot
+    into their common parent directory.
+
+    This is the same pattern used in the search script: one snapshot download,
+    then verify the expected folders exist.
+    """
+    if compound_dir.exists() and rev_dir.exists():
+        return
+
+    # Pick a shared parent so the snapshot lands in the right place.
+    common_parent = Path(os.path.commonpath([str(compound_dir), str(rev_dir)]))
+    common_parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"[INFO] Missing dataset folders. Downloading ReverseLigQ into: {common_parent}")
+    get_reverse_ligq_dataset(local_dir=str(common_parent))
+
+    if not compound_dir.exists():
+        raise FileNotFoundError(
+            f"Compound dir still missing after download: {compound_dir} "
+            f"(expected ligands.parquet and reps/ inside)."
+        )
+    if not rev_dir.exists():
+        raise FileNotFoundError(
+            f"ReverseLigQ dir still missing after download: {rev_dir} "
+            f"(expected ligand_lists.pkl etc. inside)."
+        )
 
 
 # ----------------------------------------------------------------------
@@ -33,6 +89,32 @@ def parse_args():
         default="databases",
         help="Root directory where processed databases will be stored (PDB, ChEMBL, merged, rev_ligq).",
     )
+
+    # ReverseLigQ dataset roots (downloaded from HF if missing)
+    parser.add_argument(
+        "--compound-dir",
+        type=str,
+        default="databases/compound_data/pdb_chembl",
+        help=(
+            "Directory containing compound index + representations (LigandStore root): "
+            "ligands.parquet and reps/<rep_name>.dat + reps/<rep_name>.meta.json. "
+            "If missing, the script will download the ReverseLigQ dataset snapshot. "
+            "Default: databases/compound_data/pdb_chembl"
+        ),
+    )
+    parser.add_argument(
+        "--rev-dir",
+        type=str,
+        default="databases/rev_ligq",
+        help=(
+            "Directory containing ReverseLigQ metadata: ligand_lists.pkl, "
+            "ligs_fams_curated.pkl, ligs_fams_possible.pkl, fam_prot_dict.pkl, "
+            "prot_descriptions.pkl (optional), etc. "
+            "If missing, the script will download the ReverseLigQ dataset snapshot. "
+            "Default: databases/rev_ligq"
+        ),
+    )
+
 
     parser.add_argument(
         "--temp-data-dir",
@@ -198,8 +280,13 @@ def download_base_databases_from_huggingface(output_dir: str) -> dict:
 
 def main():
 
-    # FALTA INICIALIZAR CARPETA rev_ligq CON BASES LIGQ_REV DESCARGADAS DE HUGGINGFACE
     args = parse_args()
+
+
+    # Ensure ReverseLigQ search dataset folders exist (compound representations + rev_ligq metadata)
+    compound_dir = Path(args.compound_dir)
+    rev_dir = Path(args.rev_dir)
+    _ensure_reverse_ligq_dataset(compound_dir=compound_dir, rev_dir=rev_dir)
 
     output_dir = args.output_dir
     temp_data_dir = args.temp_data_dir
