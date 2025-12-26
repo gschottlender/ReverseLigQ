@@ -136,6 +136,15 @@ def parse_args():
         default=0.35,
         help="Tanimoto threshold for curating 'possible' ChEMBL ligands when merging PDB–ChEMBL.",
     )
+    
+    parser.add_argument(
+    "--always-merge",
+    action="store_true",
+    help=(
+        "Merge databases and regenerate compound vector databases independently of "
+        "PDB and ChEMBL being updated."
+    ),
+    )
 
     return parser.parse_args()
 
@@ -436,15 +445,12 @@ def main():
     # ------------------------------------------------------------------
     # 5) Merge PDB + ChEMBL (only if at least one changed)
     # ------------------------------------------------------------------
-    if not (pdb_updated or chembl_updated):
-        print(
-            "[INFO] No PDB or ChEMBL updates detected. "
-        )
-        print(
-            "[INFO] No new updates. Exiting "
-        )
-
+    if not (pdb_updated or chembl_updated) and not args.always_merge:
+        print("[INFO] No PDB or ChEMBL updates detected. Exiting.")
         return
+
+    if not (pdb_updated or chembl_updated) and args.always_merge:
+        print("[INFO] No PDB or ChEMBL updates detected, but --always-merge was set. Continuing.")
 
     # Assumption: merge_databases() expects a directory that contains
     # subfolders "pdb" and "chembl" with the processed data.
