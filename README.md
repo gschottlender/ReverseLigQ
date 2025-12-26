@@ -11,6 +11,23 @@ This repo is published as a **Hugging Face dataset** and uses **Git LFS** for la
 
 ---
 
+## Installation
+
+Create the Conda environment from `environment.yml`:
+
+```bash
+conda env create -n reverse_ligq -f environment.yml
+conda activate reverse_ligq
+```
+---
+
+## Downloading the dataset
+
+### Automatic
+Both `rev_ligq.py` and `update_rev_ligq.py` will **auto-download** the dataset snapshot (via `snapshot_download`) if required folders are missing, placing it under the common parent (default: `databases/`).
+
+---
+
 ## Repository layout (expected on disk)
 
 After downloading the dataset snapshot, you should have:
@@ -40,13 +57,6 @@ Two roots matter:
 
 - `databases/rev_ligq/`  
   ReverseLigQ metadata: organism ligand lists, ligand→Pfam mappings, Pfam→protein mapping, protein descriptions.
-
----
-
-## Downloading the dataset
-
-### Automatic
-Both `rev_ligq.py` and `update_rev_ligq.py` will **auto-download** the dataset snapshot (via `snapshot_download`) if required folders are missing, placing it under the common parent (default: `databases/`).
 
 ---
 
@@ -81,7 +91,7 @@ ReverseLigQ integrates multiple organisms, each identified by an integer key.
 - Default neighbor cap (`k_max`): **1000** (important to avoid excessive RAM usage)
 
 ```bash
-python rev_ligq.py   --organism 13   --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O"   --out-dir results
+python rev_ligq.py --organism 13 --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O" --min-score 0.35 --out-dir results
 ```
 
 ### ChemBERTa (cosine)
@@ -89,7 +99,7 @@ python rev_ligq.py   --organism 13   --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O"  
 - Uses `seyonec/ChemBERTa-zinc-base-v1` to embed the query SMILES.
 
 ```bash
-python rev_ligq.py --organism 13 --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O" --search-type chemberta --out-dir results
+python rev_ligq.py --organism 13 --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O" --search-type chemberta --min-score 0.7 --out-dir results
 ```
 
 ### Key arguments (most used)
@@ -185,7 +195,7 @@ python update_rev_ligq.py --chembl-version 37 --output-dir databases
 
 ## Citation
 
-If you use these datasets, please cite:
+If you use these tool or the datasets, please cite:
 
 Schottlender G, Prieto JM, Palumbo MC, Castello FA, Serral F, Sosa EJ, Turjanski AG, Martí MA and Fernández Do Porto D (2022).  
 *From drugs to targets: Reverse engineering the virtual screening process on a proteomic scale.* Front. Drug. Discov. 2:969983.  
