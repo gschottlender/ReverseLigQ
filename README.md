@@ -159,13 +159,27 @@ Batch runs may also write a summary log under `results/` (depending on your scri
 
 ## Output files
 
-Per query you get:
+Running the CLI produces:
 
-- `predicted_targets.csv`  
-  Protein-level candidate targets table (ranked domains expanded to proteins).
+### 1. `predicted_targets.csv`
+Candidate protein targets with domain evidence and similarity scores.
 
-- `similarity_search_results.csv`  
-  Ligand-level similarity results (rank, comp_id, score, smiles, domains/tags).
+### 2. `similarity_search_results.csv`
+Ligand similarity ranking and associated domain summaries.
+
+#### Interpretation of `domain_tag`
+
+The column **`domain_tag`** in the predicted_targets.csv output file indicates the type of evidence supporting the ligand–domain association derived from the reference ligand:
+
+- **`curated`**  
+  Indicates that the **binding domain of the reference ligand is experimentally confirmed**.  
+  These associations originate from ligands whose interaction with a specific Pfam domain has been validated in curated datasets.  
+  As such, curated tags represent **high-confidence binding domain assignments**.
+
+- **`possible`**  
+  Indicates that the **ligand is known to bind a multidomain protein**, but the **exact binding domain is not experimentally resolved**.  
+  In these cases, multiple domains are present in the protein, and although the ligand–protein interaction is supported by experimental data, the **precise domain-level binding site remains undetermined**.  
+  Therefore, possible tags denote **putative binding domains** inferred from proteins with multiple domains rather than confirmed, domain-specific evidence.
 
 ---
 
