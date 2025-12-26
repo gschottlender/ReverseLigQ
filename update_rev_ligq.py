@@ -442,9 +442,7 @@ def main():
         print(
             "[INFO] No new updates. Exiting "
         )
-        # Borrar
-        generate_rev_ligq_databases(output_dir)
-        print("[INFO] Generated rev_ligq dictionaries.")
+
         return
 
     # Assumption: merge_databases() expects a directory that contains

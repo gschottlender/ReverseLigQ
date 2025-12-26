@@ -159,21 +159,27 @@ Per query you get:
 
 ## Updating / rebuilding the dataset (update_rev_ligq.py)
 
-`update_rev_ligq.py` is the “database builder” script used to **regenerate** the dataset artifacts querying latest PDB and ChEMBL databases:
+`update_rev_ligq.py` is the **dataset builder** used to regenerate the ReverseLigQ artifacts by querying upstream sources (**ChEMBL** and **PDB**) and rebuilding the derived files:
+
 - merged ligand–domain evidence tables,
 - organism-specific ligand lists,
-- ligand→Pfam dictionaries (curated / possible),
-- Pfam→protein mapping, protein descriptions,
-- and refreshed compound data directories (takes 8-10 hours using CPU, faster using GPU to generate ChemBERTa embeddings).
+- ligand → Pfam dictionaries (curated / possible),
+- Pfam → protein mapping and protein descriptions,
+- and refreshed compound-data directories (including rebuilding the ChemBERTa and Morgan representations if requested).
 
-Typical usage (requirse to specify chembl version to update):
+### When should I run this?
+
+This script is intended to be run **infrequently**, typically:
+- when a **new ChEMBL release** becomes available (e.g., upgrading from ChEMBL 36 → 37),
+- or when you explicitly want to refresh the dataset against updated upstream databases.
+
+### Typical usage
+
+You usually need to specify which ChEMBL version you are targeting:
 
 ```bash
-python update_rev_ligq.py --chembl-version 36 --output-dir databases
+python update_rev_ligq.py --chembl-version 37 --output-dir databases
 ```
-
-Notes:
-- The script writes the same expected structure described in **Repository layout**.
 
 ---
 
