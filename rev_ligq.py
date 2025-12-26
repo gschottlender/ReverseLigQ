@@ -215,10 +215,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-domain-ranks",
         type=_optional_int,
-        default=10,
+        default=20,
         help=(
             "Maximum number of domain ranks to keep in the final protein table. "
-            "Default: 10. "
+            "Default: 20. "
             "Pass 'none' to keep ALL domain ranks (no truncation)."
         ),
     )
