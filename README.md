@@ -26,7 +26,7 @@ conda activate reverse_ligq
 ## Downloading the dataset
 
 ### Automatic
-Both `rev_ligq.py` and `update_rev_ligq.py` will **auto-download** the dataset snapshot (via `snapshot_download`) if required folders are missing, placing it under the common parent (default: `databases/`).
+On the first run both `rev_ligq.py` and `update_rev_ligq.py` will **auto-download** the dataset snapshot (via `snapshot_download`) if required folders are missing, placing it under the common parent (default: `databases/`).
 
 ---
 
