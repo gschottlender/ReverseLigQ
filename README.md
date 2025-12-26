@@ -16,6 +16,8 @@ This repo is published as a **Hugging Face dataset** and uses **Git LFS** for la
 Create the Conda environment from `environment.yml`:
 
 ```bash
+git clone https://github.com/gschottlender/ReverseLigQ.git
+cd ReverseLigQ
 conda env create -n reverse_ligq -f environment.yml
 conda activate reverse_ligq
 ```
