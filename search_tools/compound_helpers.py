@@ -444,8 +444,7 @@ def build_chemberta_representation(
     model_id = "seyonec/ChemBERTa-zinc-base-v1"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Solo para debug, borrar después
-    print(device)
+    print(f'Generating ChemBERTa embeddings using {device}')
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     model = AutoModel.from_pretrained(model_id).to(device)
