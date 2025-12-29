@@ -1,13 +1,8 @@
+# ReverseLigQ — Ligand-Driven Protein Target Discovery
 
-# ReverseLigQ (dataset + search scripts)
+ReverseLigQ is a tool that retrieves candidate protein binding targets for a given query ligand across multiple pathogenic organisms — and now also supports human drug-target search. The method is based on an unsupervised chemical-similarity approach, identifying potential target proteins by leveraging compounds with known binding domains.
 
-ReverseLigQ is a lightweight dataset layout (plus reference scripts) to run **“reverse ligand → target”** searches at proteome scale:
-
-1. **Ligand similarity search** within a selected organism (Morgan/Tanimoto or ChemBERTa/cosine).
-2. **Domain annotation** (Pfam) for the retrieved ligands.
-3. **Candidate target proteins** for that organism (domain → protein mapping).
-
-This repo is published as a **Hugging Face dataset** and uses **Git LFS** for large binary files.
+All underlying datasets are openly available as a Hugging Face dataset, with large binary files stored using Git LFS.
 
 ---
 
