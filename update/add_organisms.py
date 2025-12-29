@@ -598,8 +598,8 @@ def save_local_organism_data(
     Dict[str, Path]
         A dictionary with the paths of the created pickle files, e.g.:
         {
-            "domain_to_proteins": Path(...),
-            "lig_list": Path(...),
+            "fam_prot_dict": Path(...),
+            "ligand_lists": Path(...),
             "prot_descriptions": Path(...),
         }
     """
@@ -610,13 +610,13 @@ def save_local_organism_data(
     paths: Dict[str, Path] = {}
 
     # 1) domain_to_proteins
-    dtp_path = org_dir / "domain_to_proteins.pkl"
+    dtp_path = org_dir / "fam_prot_dict.pkl"
     with dtp_path.open("wb") as f:
         pickle.dump(domain_to_proteins, f, protocol=pickle.HIGHEST_PROTOCOL)
     paths["domain_to_proteins"] = dtp_path
 
     # 2) lig_list
-    lig_path = org_dir / "lig_list.pkl"
+    lig_path = org_dir / "ligand_lists.pkl"
     with lig_path.open("wb") as f:
         pickle.dump(lig_list, f, protocol=pickle.HIGHEST_PROTOCOL)
     paths["lig_list"] = lig_path
@@ -746,7 +746,7 @@ def prepare_local_organism_data(
     # 8) Wrap everything under the organism key (following the existing pattern)
     domain_to_proteins_wrapped = {org_name: domain_to_proteins}
     lig_list_wrapped = {org_name: lig_list}
-    prot_descriptions_wrapped = {org_name: prot_descriptions}
+    prot_descriptions_wrapped = prot_descriptions
 
     # 9) Save as pickle files under data_dir/local_organism_data/{org_name}
     local_org_base_dir = data_dir / "local_organism_data"
