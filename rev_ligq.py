@@ -106,12 +106,42 @@ def parse_args() -> argparse.Namespace:
         )
     )
 
-    # Required organism (still required in both modes)
+    # Required organism (required in both modes)
     parser.add_argument(
-        "--organism",
-        type=str,
-        required=True,
-        help="Organism key used in rev_lq/ligand_lists.pkl (required).",
+    "--organism",
+    type=str,
+    required=True,
+    help=(
+        "Organism key. For built-in organisms, use one of:\n"
+        "  1  Bartonella bacilliformis\n"
+        "  2  Klebsiella pneumoniae\n"
+        "  3  Mycobacterium tuberculosis\n"
+        "  4  Trypanosoma cruzi\n"
+        "  5  Staphylococcus aureus RF122\n"
+        "  6  Streptococcus uberis 0140J\n"
+        "  7  Enterococcus faecium\n"
+        "  8  Escherichia coli MG1655\n"
+        "  9  Streptococcus agalactiae NEM316\n"
+        " 10  Pseudomonas syringae\n"
+        " 11  DENV (Dengue virus)\n"
+        " 12  SARS-CoV-2\n"
+        " 13  Homo sapiens\n"
+        "If --uploaded-organism is used, this must instead match the name of the "
+        "uploaded organism (i.e. a subdirectory under <data_root>/local_organism_data)."
+    ),
+    )
+
+    # Flag: organism uploaded via the upload pipeline
+    parser.add_argument(
+        "--uploaded-organism",
+        action="store_true",
+        help=(
+            "Use an uploaded organism instead of the built-in ones. "
+            "When set, --organism is interpreted as the name of the uploaded "
+            "organism, and protein/domain data are read from "
+            "<data_root>/local_organism_data/<organism> while ligand→domain data "
+            "still come from --rev-dir."
+        ),
     )
 
     # Query input: either a single SMILES or a CSV batch
@@ -132,7 +162,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
-    # Data directories (as requested)
+    # Data directories
     parser.add_argument(
         "--compound-dir",
         type=str,
@@ -151,7 +181,7 @@ def parse_args() -> argparse.Namespace:
             "Directory containing ReverseLigQ metadata: ligand_lists.pkl, "
             "ligs_fams_curated.pkl, ligs_fams_possible.pkl, fam_prot_dict.pkl, "
             "prot_descriptions.pkl (optional), etc. "
-            "Default: databases/rev_lq"
+            "Default: databases/rev_ligq"
         ),
     )
 
@@ -349,29 +379,37 @@ def run_one_query(
     query_smiles: str,
     organism: str,
     rev_dir: Path,
+    proteins_base_dir: Path,
     max_domain_ranks: Optional[int],
     include_only_curated: bool,
     only_proteins_with_description: bool,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Execute:
+    Execute the full pipeline for a single query:
       1) ligand similarity search (threshold + k_max already handled in searcher)
-      2) attach domains (curated/possible)
-      3) candidate proteins table
-      4) ligand summary table
+      2) attach domains (curated/possible) using ReverseLigQ mapping
+      3) build candidate proteins table using either:
+           - base ReverseLigQ organism data (default), or
+           - uploaded organism data (when --uploaded-organism is used)
+      4) build ligand summary table
     """
+    # 1) Ligand similarity search
     ligand_results = searcher.search(query_smiles)
 
+    # 2) Attach domains using the ReverseLigQ base directory (rev_dir)
     annotated = attach_domains_to_ligands(
         ligand_results=ligand_results,
         base_dir=rev_dir,
     )
 
+    # 3) Candidate proteins table
+    #    - base_dir: either rev_dir (built-in organisms)
+    #                or <data_root>/local_organism_data/<organism> (uploaded organisms)
     target_search_table = build_candidate_proteins_table(
         annotated_ligands=annotated,
-        base_dir=rev_dir,
+        base_dir=proteins_base_dir,
         organism=organism,
-        max_domain_ranks=max_domain_ranks,  # should support None now
+        max_domain_ranks=max_domain_ranks,  # supports None
         include_only_curated=include_only_curated,
         show_only_proteins_with_description=only_proteins_with_description,
     )
@@ -383,6 +421,7 @@ def run_one_query(
             .reset_index(drop=True)
         )
 
+    # 4) Ligand summary table
     lig_df = build_ligand_summary_dataframe(annotated)
     return target_df, lig_df
 
@@ -402,7 +441,10 @@ def load_batch_csv(path: str | Path) -> pd.DataFrame:
     required = {"lig_id", "smiles"}
     missing = required - set(df.columns)
     if missing:
-        raise ValueError(f"Batch CSV is missing required columns: {sorted(missing)}. Found: {list(df.columns)}")
+        raise ValueError(
+            f"Batch CSV is missing required columns: {sorted(missing)}. "
+            f"Found: {list(df.columns)}"
+        )
 
     df = df.copy()
     df["lig_id"] = df["lig_id"].astype(str)
@@ -430,11 +472,39 @@ def main() -> None:
 
     _ensure_dataset(compound_dir=compound_dir, rev_dir=rev_dir)
 
-    # Build once (important for ChemBERTa)
+    # Determine data_root (common parent of compound_dir and rev_dir)
+    data_root = Path(os.path.commonpath([str(compound_dir), str(rev_dir)]))
+
+    # Decide which base_dir to use for protein/domain data:
+    #  - built-in organisms  -> rev_dir
+    #  - uploaded organisms  -> <data_root>/local_organism_data/<organism>
+    if args.uploaded_organism:
+        local_org_base_dir = data_root / "local_organism_data"
+        proteins_base_dir = local_org_base_dir / args.organism
+        if not proteins_base_dir.exists():
+            raise FileNotFoundError(
+                f"Uploaded organism directory not found: {proteins_base_dir}. "
+                "Make sure you ran the upload_proteome.py pipeline with the same "
+                "--org-name, and that local_organism_data is located under the same "
+                "data root as --compound-dir and --rev-dir."
+            )
+        print(
+            f"[INFO] Using uploaded organism data for '{args.organism}' "
+            f"from: {proteins_base_dir}"
+        )
+    else:
+        proteins_base_dir = rev_dir
+
+    # Build searcher once
+    if args.uploaded_organism:
+        rev_dir_for_searcher = proteins_base_dir
+    else:
+        rev_dir_for_searcher = rev_dir
+
     searcher = build_searcher(
         organism=args.organism,
         compound_dir=compound_dir,
-        rev_dir=rev_dir,
+        rev_dir=rev_dir_for_searcher,
         search_type=args.search_type,
         min_score=args.min_score,
         k_max_ligands=args.k_max_ligands,
@@ -451,6 +521,7 @@ def main() -> None:
             query_smiles=args.query_smiles,
             organism=args.organism,
             rev_dir=rev_dir,
+            proteins_base_dir=proteins_base_dir,
             max_domain_ranks=args.max_domain_ranks,
             include_only_curated=args.include_only_curated,
             only_proteins_with_description=args.only_proteins_with_description,
@@ -486,6 +557,7 @@ def main() -> None:
                 query_smiles=smi,
                 organism=args.organism,
                 rev_dir=rev_dir,
+                proteins_base_dir=proteins_base_dir,
                 max_domain_ranks=args.max_domain_ranks,
                 include_only_curated=args.include_only_curated,
                 only_proteins_with_description=args.only_proteins_with_description,
