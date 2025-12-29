@@ -16,6 +16,8 @@ from rdkit.Chem import AllChem
 from rdkit import DataStructs
 from transformers import AutoTokenizer, AutoModel
 
+from search_tools.compound_helpers import LigandStore, unpack_bits  # noqa: E402
+
 # -------------------------------------------------------------------------
 # Defaults requested
 # -------------------------------------------------------------------------
@@ -44,10 +46,6 @@ def get_dataset(local_dir: str = "databases") -> None:
         local_dir=local_dir,
         local_dir_use_symlinks=False,
     )
-
-
-from search_tools.compound_helpers import LigandStore, unpack_bits  # noqa: E402
-
 
 # -------------------------------------------------------------------------
 # Shared helpers
