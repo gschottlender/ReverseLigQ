@@ -746,7 +746,7 @@ def prepare_local_organism_data(
     # 8) Wrap everything under the organism key (following the existing pattern)
     domain_to_proteins_wrapped = {org_name: domain_to_proteins}
     lig_list_wrapped = {org_name: lig_list}
-    prot_descriptions_wrapped = prot_descriptions
+    prot_descriptions_wrapped = {'description':prot_descriptions}
 
     # 9) Save as pickle files under data_dir/local_organism_data/{org_name}
     local_org_base_dir = data_dir / "local_organism_data"
