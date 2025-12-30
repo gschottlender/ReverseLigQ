@@ -259,6 +259,8 @@ python upload_proteome.py \
   --cpu 4
 ```
 
+> **Note:** For `--org-name`, use a short identifier **without spaces or special characters** (preferably letters/numbers/underscores only).
+
 ### Output location
 
 ```txt
