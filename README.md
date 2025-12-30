@@ -49,8 +49,6 @@ conda env create -n reverse_ligq -f environment.yml
 conda activate reverse_ligq
 ```
 
-> Tip: `mamba` is usually faster than `conda` for environment resolution.
-
 ---
 
 ## Dataset
