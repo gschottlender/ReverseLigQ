@@ -416,7 +416,7 @@ This volume stores the ReverseLigQ databases and will be reused automatically by
 
 ---
 
-## 5. Single-ligand search (SMILES query)
+## Single-ligand search (SMILES query)
 
 From any working directory (it can be outside the repo):
 
@@ -446,7 +446,7 @@ with:
 
 ---
 
-## 6. Batch search using a CSV file
+## Batch search using a CSV file
 
 Create a CSV file:
 
@@ -484,7 +484,7 @@ containing:
 
 ---
 
-## 7. Using ChemBERTa similarity (optional)
+## Using ChemBERTa similarity (optional)
 
 ReverseLigQ can also use a ChemBERTa-based similarity search instead of Morgan–Tanimoto.
 
@@ -522,7 +522,7 @@ docker run --rm \
 
 ---
 
-## 8. Add a custom organism (upload proteome)
+## Add a custom organism (upload proteome)
 
 You can upload a proteome FASTA file and register a new organism.
 This only needs to be done **once per organism** — the data are stored inside the persistent Docker volume `reverse_ligq_db`.
@@ -558,7 +558,7 @@ So after uploading, you never need to repeat this step again — just keep using
 
 ---
 
-## 9. Search against a custom organism
+## Search against a custom organism
 
 Use the same volume and specify:
 
