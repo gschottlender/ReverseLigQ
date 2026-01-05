@@ -489,7 +489,7 @@ containing:
 To use ChemBERTa-based similarity instead of Morgan–Tanimoto:
 
 ```bash
-docker run --rm   -u $(id -u):$(id -g)   -v reverse_ligq_db:/app/databases   -v "$PWD/results":/app/results   -w /app   gschottlender/reverseligq:latest   --organism 13   --query-smiles "SMILES_HERE"   --search-type chemberta   --min-score 0.7   --out-dir /app/results
+docker run --rm   -u $(id -u):$(id -g)   -v reverse_ligq_db:/app/databases   -v "$PWD/results":/app/results   -w /app   gschottlender/reverseligq:latest   --organism 13   --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O"   --search-type chemberta   --min-score 0.7   --out-dir /app/results
 ```
 
 ---
