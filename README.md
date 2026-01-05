@@ -25,6 +25,7 @@ Large binaries are handled via **Git LFS**. Public datasets are available on **H
 - [Search on uploaded organisms](#search-on-uploaded-organisms)
 - [Updating / rebuilding the dataset](#updating--rebuilding-the-dataset)
 - [Notes & best practices](#notes--best-practices)
+- [Docker usage guide](#docker-usage-guide)
 - [Citation](#citation)
 
 ---
@@ -347,6 +348,219 @@ python update_rev_ligq.py --chembl-version 37 --output-dir databases
   - `databases/`
   - `temp_data/new_proteomes/`
   - `cpu = 4`
+
+---
+
+# Docker Usage Guide
+
+ReverseLigQ can be used entirely through Docker, without installing Conda on the host system.
+
+You only need:
+
+- Docker installed
+- A local clone of this repository
+- Enough disk space to build the Docker image (the scientific Conda environment is heavy)
+
+All dataset files are stored in a persistent Docker volume so they are downloaded only once and automatically reused across runs.
+
+---
+
+## 1. Install Docker
+
+Make sure Docker is installed and available on your system:
+
+```bash
+docker --version
+```
+
+---
+
+## 2. Clone the repository
+
+Clone the ReverseLigQ repository and move into its directory:
+
+```bash
+git clone https://github.com/gschottlender/ReverseLigQ.git
+cd ReverseLigQ
+```
+
+All subsequent `docker build` and `docker run` commands assume you are in the root of this repository.
+
+---
+
+## 3. Build the Docker image locally
+
+Build the image using the provided `Dockerfile`:
+
+```bash
+docker build -t gschottlender/reverseligq:latest .
+```
+
+This command:
+
+- Uses the local repository as build context
+- Creates a Conda environment inside the image
+- Produces a local Docker image named `gschottlender/reverseligq:latest`
+
+You do **not** need a Docker Hub account for this step; the tag is local.
+
+---
+
+## 4. Create a persistent database volume (one-time)
+
+```bash
+docker volume create reverse_ligq_db
+```
+
+This volume stores the ReverseLigQ databases and will be reused automatically by all containers.
+
+---
+
+## 5. Single-ligand search (SMILES query)
+
+From any working directory (it can be outside the repo):
+
+```bash
+mkdir -p results
+```
+
+Then run:
+
+```bash
+docker run --rm   -u $(id -u):$(id -g)   -v reverse_ligq_db:/app/databases   -v "$PWD/results":/app/results   -w /app   gschottlender/reverseligq:latest   --organism 13   --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O"   --min-score 0.35   --out-dir /app/results
+```
+
+Outputs are written to:
+
+```
+results/<ligand_id>/
+```
+
+with:
+
+- `predicted_targets.csv`
+- `similarity_search_results.csv`
+
+> **Note:**  
+> `-u $(id -u):$(id -g)` ensures files are owned by your user rather than `root`.
+
+---
+
+## 6. Batch search using a CSV file
+
+Create a CSV file:
+
+```csv
+lig_id,smiles
+aspirin,CC(=O)OC1=CC=CC=C1C(=O)O
+caffeine,CN1C(=O)N(C)c2ncn(C)c2C1=O
+```
+
+Save it as `queries.csv` in your working directory, then run:
+
+```bash
+mkdir -p results
+
+docker run --rm   -u $(id -u):$(id -g)   -v reverse_ligq_db:/app/databases   -v "$PWD/results":/app/results   -v "$PWD/queries.csv":/app/queries.csv   -w /app   gschottlender/reverseligq:latest   --organism 13   --query-csv /app/queries.csv   --out-dir /app/results
+```
+Where:
+
+- `$PWD` means **“your current directory”** in the terminal.
+- `-v "$PWD/queries.csv":/app/queries.csv` tells Docker:  
+  > “Use the `queries.csv` file from this folder as `/app/queries.csv` inside the container.”
+- `-v "$PWD/results":/app/results` tells Docker:  
+  > “Write all output files to the `results/` folder in this directory.”
+
+For each `lig_id`, results appear under:
+
+```
+results/<lig_id>/
+```
+
+containing:
+
+- `predicted_targets.csv`
+- `similarity_search_results.csv`
+
+---
+
+## 7. Using ChemBERTa similarity (optional)
+
+To use ChemBERTa-based similarity instead of Morgan–Tanimoto:
+
+```bash
+docker run --rm   -u $(id -u):$(id -g)   -v reverse_ligq_db:/app/databases   -v "$PWD/results":/app/results   -w /app   gschottlender/reverseligq:latest   --organism 13   --query-smiles "SMILES_HERE"   --search-type chemberta   --min-score 0.7   --out-dir /app/results
+```
+
+---
+
+## 8. Add a custom organism (upload proteome)
+
+You can upload a proteome FASTA file and register a new organism.
+This only needs to be done **once per organism** — the data are stored inside the persistent Docker volume `reverse_ligq_db`.
+
+### Prepare your FASTA
+
+Place your proteome file in any folder, e.g.:
+
+```
+streptococcus_iniae_proteome.fasta
+```
+
+Open a terminal **in that folder** and run:
+
+```bash
+docker run --rm   -u $(id -u):$(id -g)   -v reverse_ligq_db:/app/databases   -v "$PWD":/data   -w /app   --entrypoint python   gschottlender/reverseligq:latest   upload_proteome.py     --org-name siniae     --fasta-path /data/streptococcus_iniae_proteome.fasta     --cpu 4
+```
+
+### What this means
+
+- `$PWD` = **your current directory**
+- The FASTA file stays on your machine
+- Docker sees it as `/data/streptococcus_iniae_proteome.fasta`
+- The processed organism is saved permanently into:
+
+```
+databases/local_organism_data/siniae
+```
+
+**inside the volume** (not your local folder).
+
+So after uploading, you never need to repeat this step again — just keep using the same Docker volume `reverse_ligq_db`.
+
+---
+
+## 9. Search against a custom organism
+
+Use the same volume and specify:
+
+- `--organism <name>`
+- `--uploaded-organism`
+
+Example (single ligand):
+
+```bash
+mkdir -p results
+
+docker run --rm   -u $(id -u):$(id -g)   -v reverse_ligq_db:/app/databases   -v "$PWD/results":/app/results   -w /app   gschottlender/reverseligq:latest   --organism siniae   --uploaded-organism   --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O"   --out-dir /app/results
+```
+
+or CSV mode:
+
+```bash
+docker run --rm   -u $(id -u):$(id -g)   -v reverse_ligq_db:/app/databases   -v "$PWD/results":/app/results   -v "$PWD/queries.csv":/app/queries.csv   -w /app   gschottlender/reverseligq:latest   --organism siniae   --uploaded-organism   --query-csv /app/queries.csv   --out-dir /app/results
+```
+
+The organism remains available for all future searches as long as you keep using the same `reverse_ligq_db` volume.
+
+---
+
+## Notes
+
+- The first run will download the dataset into the `reverse_ligq_db` Docker volume.
+- All subsequent runs reuse the same data automatically.
+- No Conda installation is required on the host; all dependencies live inside the Docker image.
+- Works on Linux and macOS (Windows via WSL is recommended).
 
 ---
 
