@@ -486,11 +486,39 @@ containing:
 
 ## 7. Using ChemBERTa similarity (optional)
 
-To use ChemBERTa-based similarity instead of Morgan–Tanimoto:
+ReverseLigQ can also use a ChemBERTa-based similarity search instead of Morgan–Tanimoto.
+
+To avoid downloading the ChemBERTa model on every run, create a dedicated Docker volume for the Hugging Face cache (only once):
 
 ```bash
-docker run --rm   -u $(id -u):$(id -g)   -v reverse_ligq_db:/app/databases   -v "$PWD/results":/app/results   -w /app   gschottlender/reverseligq:latest   --organism 13   --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O"   --search-type chemberta   --min-score 0.7   --out-dir /app/results
+docker volume create reverse_ligq_hf_cache
 ```
+
+Then run ChemBERTa searches like this:
+
+```bash
+mkdir -p results
+
+docker run --rm \
+  -u $(id -u):$(id -g) \
+  -v reverse_ligq_db:/app/databases \
+  -v reverse_ligq_hf_cache:/hf_cache \
+  -v "$PWD/results":/app/results \
+  -w /app \
+  gschottlender/reverseligq:latest \
+  --organism 13 \
+  --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O" \
+  --search-type chemberta \
+  --min-score 0.7 \
+  --out-dir /app/results
+```
+
+**Explanation:**
+
+- `reverse_ligq_hf_cache` stores the ChemBERTa model files (Hugging Face cache) between runs.
+- `/hf_cache` inside the container is configured as `HF_HOME`, so Transformers automatically uses it.
+- The first ChemBERTa run will download the model into this volume.
+- Subsequent runs reuse the cached model and **do not download it again**.
 
 ---
 
@@ -552,6 +580,78 @@ docker run --rm   -u $(id -u):$(id -g)   -v reverse_ligq_db:/app/databases   -v 
 ```
 
 The organism remains available for all future searches as long as you keep using the same `reverse_ligq_db` volume.
+
+---
+
+## Removing ReverseLigQ Docker Volumes
+
+### Removing stored databases and cache (optional)
+
+ReverseLigQ stores data in Docker **volumes**, so the downloaded databases and ChemBERTa cache persist across runs.
+
+You only need to remove these volumes if you want to:
+
+- free disk space
+- reset all downloaded data
+- start again from scratch
+
+#### List existing volumes
+
+```bash
+docker volume ls
+```
+
+You should see entries like:
+
+```
+reverse_ligq_db
+reverse_ligq_hf_cache   (only if using ChemBERTa)
+```
+
+#### Delete the ReverseLigQ databases
+
+```bash
+docker volume rm reverse_ligq_db
+```
+
+This permanently deletes:
+
+```
+/app/databases
+```
+
+including:
+
+- PDB/ChEMBL ligand database
+- precomputed fingerprints
+- uploaded organisms
+
+It will be re-created and re-downloaded automatically on the next run.
+
+#### Delete the ChemBERTa model cache (optional)
+
+Only needed if you used ChemBERTa search:
+
+```bash
+docker volume rm reverse_ligq_hf_cache
+```
+
+This removes the Hugging Face cached models.  
+They will be downloaded again on the next ChemBERTa run.
+
+---
+
+#### ⚠️ Important notes
+
+- Removing volumes **does not delete the Docker image**
+- Your **results folders are NOT touched**, because they live on your local filesystem
+- Once deleted, the data **cannot be recovered**
+
+Confirm removal:
+
+```bash
+docker volume ls
+```
 
 ---
 
