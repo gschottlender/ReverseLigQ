@@ -1,0 +1,9 @@
+lig_id,smiles
+aspirin,CC(=O)OC1=CC=CC=C1C(=O)O
+caffeine,CN1C(=O)N(C)c2ncn(C)c2C1=O
+ibuprofen,CC(C)CC1=CC=C(C=C1)C(C)C(=O)O
+acetaminophen,CC(=O)NC1=CC=C(C=C1)O
+benzamidine,NC(=N)C1=CC=CC=C1
+adenosine,NC1=NC=NC2=C1N=CN2C3OC(CO)C(O)C3O
+nicotinamide,NC(=O)C1=CN=CC=C1
+histamine,NCCc1c[nH]cn1
