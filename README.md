@@ -159,6 +159,40 @@ npm run dev
 
 Open the Vite URL shown in the terminal, usually `http://127.0.0.1:5173`.
 
+### Web interface with Docker
+
+Build the image:
+
+```bash
+docker build -t gschottlender/reverseligq:latest .
+```
+
+Run the web app:
+
+```bash
+docker run --rm \
+  -p 8000:8000 \
+  -v reverse_ligq_db:/app/databases \
+  -v reverse_ligq_hf_cache:/hf_cache \
+  gschottlender/reverseligq:latest
+```
+
+Open:
+
+```text
+http://127.0.0.1:8000/
+```
+
+To run the original CLI through the same image, override the command:
+
+```bash
+docker run --rm \
+  -v reverse_ligq_db:/app/databases \
+  -v reverse_ligq_hf_cache:/hf_cache \
+  gschottlender/reverseligq:latest \
+  python rev_ligq.py --help
+```
+
 ---
 
 ### Search types

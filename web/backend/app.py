@@ -14,6 +14,7 @@ import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from rdkit import Chem, RDLogger
 from rdkit.Chem import Draw
@@ -36,6 +37,7 @@ REV_DIR = DATA_ROOT / "rev_ligq"
 LOCAL_ORG_DIR = DATA_ROOT / "local_organism_data"
 RUNTIME_DIR = ROOT / "web" / "runtime" / "jobs"
 LOGO_PATH = ROOT / "logo_reverse_ligq.png"
+FRONTEND_DIST = ROOT / "web" / "frontend" / "dist"
 
 BUILT_IN_ORGANISMS = [
     {"id": "1", "label": "Bartonella bacilliformis", "uploaded": False},
@@ -430,3 +432,22 @@ def job_results(job_id: str) -> dict[str, Any]:
     if not results_path.exists():
         raise HTTPException(status_code=404, detail="Results not found")
     return json.loads(results_path.read_text(encoding="utf-8"))
+
+
+if FRONTEND_DIST.exists():
+    app.mount(
+        "/assets",
+        StaticFiles(directory=FRONTEND_DIST / "assets"),
+        name="frontend-assets",
+    )
+
+    @app.get("/")
+    def frontend_index() -> FileResponse:
+        return FileResponse(FRONTEND_DIST / "index.html")
+
+    @app.get("/{path:path}")
+    def frontend_spa(path: str) -> FileResponse:
+        candidate = FRONTEND_DIST / path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / "index.html")
