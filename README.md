@@ -136,6 +136,154 @@ python rev_ligq.py \
   --out-dir results
 ```
 
+## Web interface
+
+ReverseLigQ also includes a local web interface with two screens: target search
+and proteome upload.
+
+Run the backend:
+
+```bash
+source /home/gustavo/anaconda3/etc/profile.d/conda.sh
+conda activate reverse_ligq_1.5
+uvicorn web.backend.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+Run the frontend:
+
+```bash
+cd web/frontend
+npm install
+npm run dev
+```
+
+Open the Vite URL shown in the terminal, usually `http://127.0.0.1:5173`.
+
+To stop the local web interface, press `Ctrl+C` in both terminals:
+
+- the backend terminal running `uvicorn`,
+- the frontend terminal running `npm run dev`.
+
+### Web interface with Docker
+
+The Docker image can serve the full web interface directly. In this mode, the
+container runs FastAPI/Uvicorn and serves the compiled React frontend at `/`.
+
+Build the image:
+
+```bash
+docker build -t gschottlender/reverseligq:latest .
+```
+
+Create persistent volumes once:
+
+```bash
+docker volume create reverse_ligq_db
+docker volume create reverse_ligq_hf_cache
+```
+
+Run the web app:
+
+```bash
+docker run --rm \
+  -p 8000:8000 \
+  -v reverse_ligq_db:/app/databases \
+  -v reverse_ligq_hf_cache:/hf_cache \
+  gschottlender/reverseligq:latest
+```
+
+Open:
+
+```text
+http://127.0.0.1:8000/
+```
+
+To stop an interactive Docker run, press `Ctrl+C` in the terminal running the
+container. If the container is running detached, stop it with:
+
+```bash
+docker ps
+docker stop <container_id>
+```
+
+The `reverse_ligq_db` volume is important. It stores:
+
+- the downloaded ReverseLigQ dataset,
+- uploaded proteomes under `databases/local_organism_data/<organism_name>/`,
+- Pfam files downloaded for proteome uploads.
+
+If you upload a new proteome through the web interface while this volume is
+mounted, the organism remains available after the container stops and will show
+up in the organism dropdown the next time you run the container with the same
+volume.
+
+#### Web search example
+
+1. Open `http://127.0.0.1:8000/`.
+2. In **Target Search**, choose an organism, for example `13. Homo sapiens`.
+3. Enter a SMILES string, for example:
+
+```text
+CC(=O)OC1=CC=CC=C1C(=O)O
+```
+
+4. Select `ECFP4 + Tanimoto` or `ChemBERTa + Cosine`.
+5. Set the similarity threshold and maximum domain ranks.
+6. Click **Run Target Search**.
+
+#### Web proteome upload example
+
+1. Open `http://127.0.0.1:8000/`.
+2. Go to **Proteome Upload**.
+3. Enter an organism name such as `siniae`.
+4. Upload a FASTA proteome file.
+5. Click **Upload Proteome**.
+
+After a successful upload, the organism is stored in:
+
+```text
+databases/local_organism_data/siniae/
+```
+
+inside the `reverse_ligq_db` Docker volume, and can be selected in future web
+searches by running the container again with:
+
+```bash
+docker run --rm \
+  -p 8000:8000 \
+  -v reverse_ligq_db:/app/databases \
+  -v reverse_ligq_hf_cache:/hf_cache \
+  gschottlender/reverseligq:latest
+```
+
+To run the original CLI through the same image, override the command:
+
+```bash
+docker run --rm \
+  -v reverse_ligq_db:/app/databases \
+  -v reverse_ligq_hf_cache:/hf_cache \
+  gschottlender/reverseligq:latest \
+  python rev_ligq.py --help
+```
+
+For CLI commands that write result files to your host machine, mount an output
+directory explicitly, for example:
+
+```bash
+mkdir -p results
+
+docker run --rm \
+  -v reverse_ligq_db:/app/databases \
+  -v reverse_ligq_hf_cache:/hf_cache \
+  -v "$PWD/results":/app/results \
+  gschottlender/reverseligq:latest \
+  python rev_ligq.py \
+    --organism 13 \
+    --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O" \
+    --min-score 0.35 \
+    --out-dir /app/results
+```
+
 ---
 
 ### Search types
@@ -671,4 +819,3 @@ If you use this tool or its datasets, please cite:
 Schottlender G, Prieto JM, Palumbo MC, Castello FA, Serral F, Sosa EJ, Turjanski AG, Martí MA and Fernández Do Porto D (2022).  
 *From drugs to targets: Reverse engineering the virtual screening process on a proteomic scale.* Front. Drug. Discov. 2:969983.  
 doi: 10.3389/fddsv.2022.969983
-

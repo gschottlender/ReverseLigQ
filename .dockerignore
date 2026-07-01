@@ -10,3 +10,9 @@ databases/
 results/
 .tmp/
 .logs/
+temp_data/
+web/runtime/
+web/frontend/node_modules/
+web/frontend/dist/
+__pycache__/
+*.pyc

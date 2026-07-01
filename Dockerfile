@@ -4,6 +4,14 @@
 FROM continuumio/miniconda3:latest
 
 # -------------------------------------------------------------------
+# SYSTEM DEPENDENCIES
+# Node.js is only used to build the React frontend during image build.
+# -------------------------------------------------------------------
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends nodejs npm && \
+    rm -rf /var/lib/apt/lists/*
+
+# -------------------------------------------------------------------
 # WORKDIR
 # -------------------------------------------------------------------
 WORKDIR /app
@@ -42,11 +50,25 @@ ENV HF_HOME=/hf_cache
 COPY . .
 
 # -------------------------------------------------------------------
-# ENTRYPOINT
+# BUILD FRONTEND
 # -------------------------------------------------------------------
-ENTRYPOINT ["python", "rev_ligq.py"]
+RUN cd web/frontend && \
+    npm ci && \
+    npm run build && \
+    rm -rf node_modules
 
 # -------------------------------------------------------------------
-# DEFAULT CMD
+# WEB PORT
 # -------------------------------------------------------------------
-CMD ["--help"]
+EXPOSE 8000
+
+# -------------------------------------------------------------------
+# DEFAULT WEB COMMAND
+# -------------------------------------------------------------------
+CMD ["uvicorn", "web.backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# -------------------------------------------------------------------
+# CLI USAGE
+# -------------------------------------------------------------------
+# To run the historical CLI instead of the web app, override the command:
+# docker run ... gschottlender/reverseligq:latest python rev_ligq.py --help

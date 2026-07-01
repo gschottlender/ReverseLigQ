@@ -26,3 +26,17 @@ __pycache__/
 # ============================
 *.pkl
 *.pickle
+
+# ============================
+#  Web app runtime
+# ============================
+web/runtime/
+web/frontend/node_modules/
+web/frontend/dist/
+
+# ============================
+#  Local generated data
+# ============================
+databases/
+temp_data/
+results/
