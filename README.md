@@ -159,6 +159,11 @@ npm run dev
 
 Open the Vite URL shown in the terminal, usually `http://127.0.0.1:5173`.
 
+To stop the local web interface, press `Ctrl+C` in both terminals:
+
+- the backend terminal running `uvicorn`,
+- the frontend terminal running `npm run dev`.
+
 ### Web interface with Docker
 
 The Docker image can serve the full web interface directly. In this mode, the
@@ -191,6 +196,14 @@ Open:
 
 ```text
 http://127.0.0.1:8000/
+```
+
+To stop an interactive Docker run, press `Ctrl+C` in the terminal running the
+container. If the container is running detached, stop it with:
+
+```bash
+docker ps
+docker stop <container_id>
 ```
 
 The `reverse_ligq_db` volume is important. It stores:
