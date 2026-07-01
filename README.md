@@ -161,10 +161,20 @@ Open the Vite URL shown in the terminal, usually `http://127.0.0.1:5173`.
 
 ### Web interface with Docker
 
+The Docker image can serve the full web interface directly. In this mode, the
+container runs FastAPI/Uvicorn and serves the compiled React frontend at `/`.
+
 Build the image:
 
 ```bash
 docker build -t gschottlender/reverseligq:latest .
+```
+
+Create persistent volumes once:
+
+```bash
+docker volume create reverse_ligq_db
+docker volume create reverse_ligq_hf_cache
 ```
 
 Run the web app:
@@ -183,6 +193,56 @@ Open:
 http://127.0.0.1:8000/
 ```
 
+The `reverse_ligq_db` volume is important. It stores:
+
+- the downloaded ReverseLigQ dataset,
+- uploaded proteomes under `databases/local_organism_data/<organism_name>/`,
+- Pfam files downloaded for proteome uploads.
+
+If you upload a new proteome through the web interface while this volume is
+mounted, the organism remains available after the container stops and will show
+up in the organism dropdown the next time you run the container with the same
+volume.
+
+#### Web search example
+
+1. Open `http://127.0.0.1:8000/`.
+2. In **Target Search**, choose an organism, for example `13. Homo sapiens`.
+3. Enter a SMILES string, for example:
+
+```text
+CC(=O)OC1=CC=CC=C1C(=O)O
+```
+
+4. Select `ECFP4 + Tanimoto` or `ChemBERTa + Cosine`.
+5. Set the similarity threshold and maximum domain ranks.
+6. Click **Run Target Search**.
+
+#### Web proteome upload example
+
+1. Open `http://127.0.0.1:8000/`.
+2. Go to **Proteome Upload**.
+3. Enter an organism name such as `siniae`.
+4. Upload a FASTA proteome file.
+5. Click **Upload Proteome**.
+
+After a successful upload, the organism is stored in:
+
+```text
+databases/local_organism_data/siniae/
+```
+
+inside the `reverse_ligq_db` Docker volume, and can be selected in future web
+searches by running the container again with:
+
+```bash
+docker run --rm \
+  -p 8000:8000 \
+  -v reverse_ligq_db:/app/databases \
+  -v reverse_ligq_hf_cache:/hf_cache \
+  gschottlender/reverseligq:latest
+```
+
 To run the original CLI through the same image, override the command:
 
 ```bash
@@ -191,6 +251,24 @@ docker run --rm \
   -v reverse_ligq_hf_cache:/hf_cache \
   gschottlender/reverseligq:latest \
   python rev_ligq.py --help
+```
+
+For CLI commands that write result files to your host machine, mount an output
+directory explicitly, for example:
+
+```bash
+mkdir -p results
+
+docker run --rm \
+  -v reverse_ligq_db:/app/databases \
+  -v reverse_ligq_hf_cache:/hf_cache \
+  -v "$PWD/results":/app/results \
+  gschottlender/reverseligq:latest \
+  python rev_ligq.py \
+    --organism 13 \
+    --query-smiles "CC(=O)OC1=CC=CC=C1C(=O)O" \
+    --min-score 0.35 \
+    --out-dir /app/results
 ```
 
 ---
