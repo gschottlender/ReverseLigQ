@@ -334,9 +334,13 @@ def run_hmmscan_pfam(
     # Ensure hmmscan is available
     check_dependency("hmmscan")
 
-    # Run hmmscan with domtblout output
+    # Run hmmscan with Pfam gathering thresholds. Without --cut_ga, HMMER
+    # reports weak domains up to broad default E-value thresholds, which can
+    # strongly over-annotate proteomes relative to Pfam/UniProt.
     cmd = [
         "hmmscan",
+        "--cut_ga",
+        "--noali",
         "--cpu",
         str(cpu),
         "--domtblout",

@@ -136,6 +136,29 @@ python rev_ligq.py \
   --out-dir results
 ```
 
+## Web interface
+
+ReverseLigQ also includes a local web interface with two screens: target search
+and proteome upload.
+
+Run the backend:
+
+```bash
+source /home/gustavo/anaconda3/etc/profile.d/conda.sh
+conda activate reverse_ligq_1.5
+uvicorn web.backend.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+Run the frontend:
+
+```bash
+cd web/frontend
+npm install
+npm run dev
+```
+
+Open the Vite URL shown in the terminal, usually `http://127.0.0.1:5173`.
+
 ---
 
 ### Search types
@@ -671,4 +694,3 @@ If you use this tool or its datasets, please cite:
 Schottlender G, Prieto JM, Palumbo MC, Castello FA, Serral F, Sosa EJ, Turjanski AG, Martí MA and Fernández Do Porto D (2022).  
 *From drugs to targets: Reverse engineering the virtual screening process on a proteomic scale.* Front. Drug. Discov. 2:969983.  
 doi: 10.3389/fddsv.2022.969983
-

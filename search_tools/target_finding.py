@@ -796,6 +796,15 @@ def build_ligand_summary_dataframe(
     pandas.DataFrame
         Ligand-level summary table.
     """
+    columns = [
+        "rank",
+        "comp_id",
+        "score",
+        "smiles",
+        "curated_domains",
+        "possible_domains",
+        "domain_summary",
+    ]
     rows = []
 
     for lig in annotated_ligands:
@@ -835,7 +844,10 @@ def build_ligand_summary_dataframe(
             }
         )
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=columns)
+    if df.empty:
+        return df
+
     # Optional: sort by rank then score descending
     df = df.sort_values(by=["rank", "score"], ascending=[True, False]).reset_index(drop=True)
     return df
