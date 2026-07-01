@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Dna,
+  Download,
   FileSpreadsheet,
   FlaskConical,
   Loader2,
@@ -497,6 +498,8 @@ function ResultsPanel({ results, currentResult, selectedResult, setSelectedResul
   const columns = activeTab === "targets"
     ? ["rank", "protein_id", "protein_description", "domain_id", "domain_tag", "reference_ligand_id", "reference_ligand_score"]
     : ["structure_svg", "rank", "comp_id", "score", "curated_domains", "possible_domains", "domain_summary"];
+  const targetExportColumns = ["rank", "protein_id", "protein_description", "domain_id", "domain_tag", "reference_ligand_id", "reference_ligand_score", "reference_ligand_smiles"];
+  const similarityExportColumns = ["rank", "comp_id", "score", "smiles", "curated_domains", "possible_domains", "domain_summary"];
 
   return (
     <section className="results-panel panel">
@@ -528,6 +531,33 @@ function ResultsPanel({ results, currentResult, selectedResult, setSelectedResul
       <div className="tabs">
         <button className={cx(activeTab === "targets" && "active")} onClick={() => setActiveTab("targets")}>Predicted Targets</button>
         <button className={cx(activeTab === "similarity" && "active")} onClick={() => setActiveTab("similarity")}>Similarity Search</button>
+      </div>
+
+      <div className="export-row">
+        <button
+          type="button"
+          className="secondary-action"
+          onClick={() => downloadCsv(
+            `${safeFilePart(currentResult?.ligand_id || "query")}_predicted_targets.csv`,
+            currentResult?.predicted_targets || [],
+            targetExportColumns,
+          )}
+        >
+          <Download size={16} />
+          Export Predicted Targets
+        </button>
+        <button
+          type="button"
+          className="secondary-action"
+          onClick={() => downloadCsv(
+            `${safeFilePart(currentResult?.ligand_id || "query")}_similarity_search_results.csv`,
+            currentResult?.similarity_search_results || [],
+            similarityExportColumns,
+          )}
+        >
+          <Download size={16} />
+          Export Similarity Search
+        </button>
       </div>
 
       <DataTable rows={rows} columns={columns} />
@@ -573,6 +603,38 @@ function formatCell(value) {
   if (value === null || value === undefined || value === "") return <span className="muted">-</span>;
   if (typeof value === "number") return Number.isInteger(value) ? value : value.toFixed(4);
   return String(value);
+}
+
+function downloadCsv(filename, rows, columns) {
+  const csv = toCsv(rows, columns);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function toCsv(rows, columns) {
+  const header = columns.join(",");
+  const body = rows.map((row) => columns.map((column) => csvCell(row[column])).join(","));
+  return [header, ...body].join("\n") + "\n";
+}
+
+function csvCell(value) {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+  return text;
+}
+
+function safeFilePart(value) {
+  return String(value).trim().replace(/[^A-Za-z0-9._-]+/g, "_") || "query";
 }
 
 function parseCsvPreview(text) {

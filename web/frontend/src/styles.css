@@ -307,6 +307,26 @@ input:disabled {
   opacity: 0.7;
 }
 
+.secondary-action {
+  border: 1px solid #b9d6dd;
+  border-radius: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #f7fcfd;
+  color: var(--primary-dark);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.secondary-action:hover {
+  border-color: var(--turquoise);
+  background: #e4f8f7;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -484,6 +504,14 @@ input:disabled {
 .tabs button.active {
   color: var(--primary);
   border-bottom-color: var(--turquoise);
+}
+
+.export-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .table-wrap {
