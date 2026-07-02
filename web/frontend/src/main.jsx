@@ -37,6 +37,13 @@ const PREDICTED_TARGET_TOOLTIPS = {
   reference_ligand_score: "Similarity score between your query ligand and the reference ligand under the selected search method. Higher values indicate closer chemical similarity.",
 };
 
+const FORM_TOOLTIPS = {
+  searchMethod: "Choose how ReverseLigQ compares your query ligand against known ligands. ECFP4 + Tanimoto uses molecular fingerprints and is fast; ChemBERTa + Cosine uses learned SMILES embeddings and can capture broader chemical similarity.",
+  similarityThreshold: "Minimum similarity score required for a reference ligand to be considered. Higher values make the search stricter; lower values may return more candidates but can include weaker matches.",
+  maxDomainRanks: "Limits how many ranked Pfam domain candidates are kept when building the predicted target table. Lower values keep the strongest domain evidence; use Include all domain ranks for a broader, larger result table.",
+  cpuThreads: "Number of CPU threads HMMER uses while scanning the uploaded proteome against Pfam. More threads can speed up large proteomes, but should not exceed the cores available on the machine.",
+};
+
 function cx(...items) {
   return items.filter(Boolean).join(" ");
 }
@@ -123,8 +130,25 @@ function App() {
         ) : (
           <ProteomeUploadScreen refreshOrganisms={refreshOrganisms} />
         )}
+        <AppFooter />
       </main>
     </div>
+  );
+}
+
+function AppFooter() {
+  return (
+    <footer className="app-footer">
+      <a href="https://github.com/gschottlender/ReverseLigQ" target="_blank" rel="noreferrer">
+        github.com/gschottlender/ReverseLigQ
+      </a>
+      <span>
+        Schottlender et al. (2022), Frontiers in Drug Discovery ·{" "}
+        <a href="https://doi.org/10.3389/fddsv.2022.969983" target="_blank" rel="noreferrer">
+          doi:10.3389/fddsv.2022.969983
+        </a>
+      </span>
+    </footer>
   );
 }
 
@@ -301,7 +325,7 @@ function SearchScreen({ organisms }) {
             </Field>
           )}
 
-          <Field label="Similarity method">
+          <Field label="Similarity method" tooltip={FORM_TOOLTIPS.searchMethod}>
             <div className="segmented">
               {Object.entries(SEARCH_TYPES).map(([key, item]) => (
                 <button type="button" key={key} className={cx(searchType === key && "selected")} onClick={() => setSearchType(key)}>
@@ -312,10 +336,10 @@ function SearchScreen({ organisms }) {
           </Field>
 
           <div className="control-grid">
-            <Field label="Similarity threshold">
+            <Field label="Similarity threshold" tooltip={FORM_TOOLTIPS.similarityThreshold}>
               <input type="number" min="0" max="1" step="0.01" value={minScore} onChange={(event) => setMinScore(event.target.value)} />
             </Field>
-            <Field label="Maximum domain ranks">
+            <Field label="Maximum domain ranks" tooltip={FORM_TOOLTIPS.maxDomainRanks}>
               <input type="number" min="1" step="1" value={maxDomainRanks} disabled={allDomains} onChange={(event) => setMaxDomainRanks(event.target.value)} />
             </Field>
           </div>
@@ -414,7 +438,7 @@ function ProteomeUploadScreen({ refreshOrganisms }) {
         <Field label="FASTA file">
           <input ref={fileRef} type="file" accept=".fasta,.fa,.faa,.txt" onChange={(event) => setFasta(event.target.files?.[0] || null)} />
         </Field>
-        <Field label="CPU threads">
+        <Field label="CPU threads" tooltip={FORM_TOOLTIPS.cpuThreads}>
           <input type="number" min="1" step="1" value={cpu} onChange={(event) => setCpu(event.target.value)} />
         </Field>
         {error && <Alert text={error} tone="error" />}
@@ -429,10 +453,13 @@ function ProteomeUploadScreen({ refreshOrganisms }) {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, tooltip, children }) {
   return (
     <label className="field">
-      <span>{label}</span>
+      <span className="field-label">
+        <span>{label}</span>
+        {tooltip && <HelpTooltip label={label} tooltip={tooltip} />}
+      </span>
       {children}
     </label>
   );
@@ -650,10 +677,18 @@ function ColumnHeader({ column, tooltip }) {
   if (!tooltip) return label;
 
   return (
-    <span className="column-header has-tooltip" tabIndex="0" aria-label={`${label}: ${tooltip}`}>
+    <span className="column-header has-tooltip">
       <span>{label}</span>
-      <Info className="column-help-icon" size={13} aria-hidden="true" />
-      <span className="column-tooltip" role="tooltip">{tooltip}</span>
+      <HelpTooltip label={label} tooltip={tooltip} />
+    </span>
+  );
+}
+
+function HelpTooltip({ label, tooltip }) {
+  return (
+    <span className="help-tooltip" tabIndex="0" aria-label={`${label}: ${tooltip}`}>
+      <Info className="help-tooltip-icon" size={13} aria-hidden="true" />
+      <span className="help-tooltip-panel" role="tooltip">{tooltip}</span>
     </span>
   );
 }

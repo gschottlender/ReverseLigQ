@@ -150,11 +150,41 @@ button {
 .main {
   min-width: 0;
   padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 
 .workspace {
   display: grid;
   gap: 22px;
+}
+
+.app-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  justify-content: center;
+  margin-top: auto;
+  padding: 16px 0 2px;
+  border-top: 1px solid rgba(216, 230, 234, 0.9);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.app-footer a {
+  color: var(--primary);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  color: var(--primary-dark);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .page-header,
@@ -223,6 +253,13 @@ h2 {
   color: var(--primary-dark);
   font-size: 13px;
   font-weight: 720;
+}
+
+.field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
 }
 
 input,
@@ -599,20 +636,29 @@ th {
 
 .column-header.has-tooltip {
   cursor: help;
+}
+
+.help-tooltip {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: help;
   outline: none;
 }
 
-.column-header.has-tooltip:focus-visible {
-  border-radius: 4px;
+.help-tooltip:focus-visible {
   box-shadow: 0 0 0 3px rgba(21, 184, 176, 0.18);
 }
 
-.column-help-icon {
+.help-tooltip-icon {
   flex: 0 0 auto;
   color: var(--primary);
 }
 
-.column-tooltip {
+.help-tooltip-panel {
   position: absolute;
   left: 50%;
   top: calc(100% + 8px);
@@ -635,13 +681,15 @@ th {
   visibility: hidden;
 }
 
-.column-header.has-tooltip:hover .column-help-icon,
-.column-header.has-tooltip:focus-visible .column-help-icon {
+.help-tooltip:hover .help-tooltip-icon,
+.help-tooltip:focus-visible .help-tooltip-icon,
+.column-header.has-tooltip:hover .help-tooltip-icon {
   color: var(--primary-dark);
 }
 
-.column-header.has-tooltip:hover .column-tooltip,
-.column-header.has-tooltip:focus-visible .column-tooltip {
+.help-tooltip:hover .help-tooltip-panel,
+.help-tooltip:focus-visible .help-tooltip-panel,
+.column-header.has-tooltip:hover .help-tooltip-panel {
   opacity: 1;
   visibility: visible;
 }
