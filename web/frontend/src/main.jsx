@@ -9,6 +9,7 @@ import {
   Download,
   FileSpreadsheet,
   FlaskConical,
+  Info,
   Loader2,
   Play,
   Search,
@@ -27,6 +28,13 @@ const SEARCH_TYPES = {
     label: "ChemBERTa + Cosine",
     threshold: 0.85,
   },
+};
+
+const PREDICTED_TARGET_TOOLTIPS = {
+  domain_id: "Pfam protein domain associated with the candidate target. ReverseLigQ uses this domain as the evidence bridge between similar known ligands and proteins in the selected organism.",
+  domain_tag: "Evidence type for the ligand-domain link. Curated means experimentally supported domain evidence; possible means the reference ligand binds a multi-domain protein but the exact binding domain is not resolved.",
+  reference_ligand_id: "Known ligand from the ReverseLigQ reference data that is chemically similar to your query and connects this prediction to the reported domain evidence.",
+  reference_ligand_score: "Similarity score between your query ligand and the reference ligand under the selected search method. Higher values indicate closer chemical similarity.",
 };
 
 function cx(...items) {
@@ -560,18 +568,26 @@ function ResultsPanel({ results, currentResult, selectedResult, setSelectedResul
         </button>
       </div>
 
-      <DataTable rows={rows} columns={columns} />
+      <DataTable
+        rows={rows}
+        columns={columns}
+        columnTooltips={activeTab === "targets" ? PREDICTED_TARGET_TOOLTIPS : {}}
+      />
     </section>
   );
 }
 
-function DataTable({ rows, columns }) {
+function DataTable({ rows, columns, columnTooltips = {} }) {
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            {columns.map((column) => <th key={column}>{column.replaceAll("_", " ")}</th>)}
+            {columns.map((column) => (
+              <th key={column}>
+                <ColumnHeader column={column} tooltip={columnTooltips[column]} />
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -596,6 +612,19 @@ function DataTable({ rows, columns }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function ColumnHeader({ column, tooltip }) {
+  const label = column.replaceAll("_", " ");
+  if (!tooltip) return label;
+
+  return (
+    <span className="column-header has-tooltip" tabIndex="0" aria-label={`${label}: ${tooltip}`}>
+      <span>{label}</span>
+      <Info className="column-help-icon" size={13} aria-hidden="true" />
+      <span className="column-tooltip" role="tooltip">{tooltip}</span>
+    </span>
   );
 }
 
