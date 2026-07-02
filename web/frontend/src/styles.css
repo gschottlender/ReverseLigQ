@@ -469,6 +469,11 @@ input:disabled {
   background: #fbfefe;
 }
 
+.result-summary.error {
+  border-color: #efbbb7;
+  background: #fff7f6;
+}
+
 .result-summary strong,
 .result-summary span {
   display: block;

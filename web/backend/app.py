@@ -229,6 +229,8 @@ def _run_search_job(
             query_rows = [{"ligand_id": "query", "smiles": query_smiles or ""}]
 
         result_payload = []
+        log_rows: list[dict[str, Any]] = []
+        is_batch = query_csv_path is not None
         total = len(query_rows)
         for idx, row in enumerate(query_rows, start=1):
             ligand_id = row["ligand_id"]
@@ -238,41 +240,92 @@ def _run_search_job(
             q_dir.mkdir(parents=True, exist_ok=True)
             _update_job(job_id, message=f"Running target search {idx}/{total}: {ligand_id}")
 
-            target_df, lig_df = run_one_query(
-                searcher=searcher,
-                query_smiles=smiles,
-                organism=organism,
-                rev_dir=REV_DIR,
-                proteins_base_dir=proteins_base_dir,
-                max_domain_ranks=max_domain_ranks,
-                include_only_curated=False,
-                only_proteins_with_description=False,
-            )
+            try:
+                target_df, lig_df = run_one_query(
+                    searcher=searcher,
+                    query_smiles=smiles,
+                    organism=organism,
+                    rev_dir=REV_DIR,
+                    proteins_base_dir=proteins_base_dir,
+                    max_domain_ranks=max_domain_ranks,
+                    include_only_curated=False,
+                    only_proteins_with_description=False,
+                )
 
-            target_df.to_csv(q_dir / "predicted_targets.csv", index=False)
-            lig_df.to_csv(q_dir / "similarity_search_results.csv", index=False)
+                target_df.to_csv(q_dir / "predicted_targets.csv", index=False)
+                lig_df.to_csv(q_dir / "similarity_search_results.csv", index=False)
 
-            target_records = _records(target_df)
-            similarity_records = _records(lig_df)
-            for item in similarity_records:
-                item["structure_svg"] = _try_svg(item.get("smiles"))
+                target_records = _records(target_df)
+                similarity_records = _records(lig_df)
+                for item in similarity_records:
+                    item["structure_svg"] = _try_svg(item.get("smiles"))
 
-            result_payload.append(
-                {
-                    "ligand_id": ligand_id,
-                    "safe_id": safe_id,
-                    "smiles": smiles,
-                    "query_svg": _try_svg(smiles, width=260, height=190),
-                    "predicted_targets": target_records,
-                    "similarity_search_results": similarity_records,
-                }
-            )
+                result_payload.append(
+                    {
+                        "ligand_id": ligand_id,
+                        "safe_id": safe_id,
+                        "smiles": smiles,
+                        "status": "ok",
+                        "error": None,
+                        "query_svg": _try_svg(smiles, width=260, height=190),
+                        "predicted_targets": target_records,
+                        "similarity_search_results": similarity_records,
+                    }
+                )
+                log_rows.append(
+                    {
+                        "lig_id": ligand_id,
+                        "smiles": smiles,
+                        "out_dir": str(q_dir),
+                        "status": "ok",
+                        "n_ligand_hits": int(len(lig_df)),
+                        "n_target_rows": int(len(target_df)),
+                    }
+                )
+            except Exception as exc:
+                if not is_batch:
+                    raise
 
+                error = str(exc)
+                (q_dir / "error.txt").write_text(error, encoding="utf-8")
+                (q_dir / "traceback.txt").write_text(traceback.format_exc(), encoding="utf-8")
+                result_payload.append(
+                    {
+                        "ligand_id": ligand_id,
+                        "safe_id": safe_id,
+                        "smiles": smiles,
+                        "status": "error",
+                        "error": error,
+                        "query_svg": None,
+                        "predicted_targets": [],
+                        "similarity_search_results": [],
+                    }
+                )
+                log_rows.append(
+                    {
+                        "lig_id": ligand_id,
+                        "smiles": smiles,
+                        "out_dir": str(q_dir),
+                        "status": "error",
+                        "error": error,
+                    }
+                )
+
+        if is_batch:
+            pd.DataFrame(log_rows).to_csv(results_dir / "batch_run_log.csv", index=False)
+
+        n_failed = sum(1 for item in result_payload if item.get("status") == "error")
+        summary = {
+            "total": len(result_payload),
+            "succeeded": len(result_payload) - n_failed,
+            "failed": n_failed,
+        }
         (job_dir / "results.json").write_text(
-            json.dumps({"queries": result_payload}, indent=2),
+            json.dumps({"queries": result_payload, "summary": summary, "run_log": log_rows}, indent=2),
             encoding="utf-8",
         )
-        _update_job(job_id, status="succeeded", finished_at=_now(), message="Search completed")
+        message = "Search completed" if n_failed == 0 else f"Search completed with {n_failed} error(s)"
+        _update_job(job_id, status="succeeded", finished_at=_now(), message=message)
     except Exception as exc:
         (_job_dir(job_id) / "traceback.txt").write_text(traceback.format_exc(), encoding="utf-8")
         _update_job(
