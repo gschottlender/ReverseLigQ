@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-from rdkit import RDLogger
+from rdkit import Chem, RDLogger
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -95,6 +95,16 @@ def _safe_dirname(name: str, fallback: str = "query") -> str:
     if s in {".", ".."}:
         return fallback
     return s
+
+
+def validate_query_smiles(smiles: str) -> str:
+    """
+    Validate and normalize a query SMILES before any search backend runs.
+    """
+    cleaned = str(smiles or "").strip()
+    if not cleaned or Chem.MolFromSmiles(cleaned) is None:
+        raise ValueError(f"Invalid SMILES: {cleaned!r}")
+    return cleaned
 
 
 def parse_args() -> argparse.Namespace:
@@ -393,6 +403,8 @@ def run_one_query(
            - uploaded organism data (when --uploaded-organism is used)
       4) build ligand summary table
     """
+    query_smiles = validate_query_smiles(query_smiles)
+
     # 1) Ligand similarity search
     ligand_results = searcher.search(query_smiles)
 
@@ -433,7 +445,8 @@ def load_batch_csv(path: str | Path) -> pd.DataFrame:
     """
     Read batch CSV with required columns: lig_id, smiles.
 
-    Returns a DataFrame with both columns as string dtype, dropping rows where smiles is empty.
+    Returns a DataFrame with both columns as string dtype. Empty or invalid
+    SMILES are kept so batch runners can report them per compound.
     """
     path = Path(path)
     df = pd.read_csv(path)
@@ -447,15 +460,12 @@ def load_batch_csv(path: str | Path) -> pd.DataFrame:
         )
 
     df = df.copy()
-    df["lig_id"] = df["lig_id"].astype(str)
-    df["smiles"] = df["smiles"].astype(str)
-
-    # Drop empties / NaNs
+    df["lig_id"] = df["lig_id"].fillna("").astype(str).str.strip()
     df["smiles"] = df["smiles"].fillna("").astype(str).str.strip()
-    df = df[df["smiles"] != ""].reset_index(drop=True)
+    df = df[(df["lig_id"] != "") | (df["smiles"] != "")].reset_index(drop=True)
 
     if df.empty:
-        raise ValueError("Batch CSV has no valid rows after filtering empty SMILES.")
+        raise ValueError("Batch CSV has no query rows.")
     return df
 
 

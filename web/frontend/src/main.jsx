@@ -104,19 +104,15 @@ function App() {
       <aside className="sidebar">
         <div className="brand">
           <img src="/api/assets/logo" alt="ReverseLigQ logo" />
-          <div>
-            <strong>ReverseLigQ</strong>
-            <span>Target discovery</span>
-          </div>
         </div>
         <nav className="nav">
-          <button className={cx(screen === "search" && "active")} onClick={() => setScreen("search")}>
+          <button className={cx(screen === "search" && "active")} onClick={() => setScreen("search")} aria-label="Target Search">
             <Search size={18} />
-            Target Search
+            <span className="nav-label">Target Search</span>
           </button>
-          <button className={cx(screen === "upload" && "active")} onClick={() => setScreen("upload")}>
+          <button className={cx(screen === "upload" && "active")} onClick={() => setScreen("upload")} aria-label="Proteome Upload">
             <Upload size={18} />
-            Proteome Upload
+            <span className="nav-label">Proteome Upload</span>
           </button>
         </nav>
       </aside>
@@ -154,8 +150,10 @@ function SearchScreen({ organisms }) {
   const job = usePolling(jobId, async (doneJob) => {
     if (doneJob.status === "succeeded") {
       const payload = await apiJson(`/api/jobs/${doneJob.id}/results`);
-      setResults(payload.queries || []);
-      setSelectedResult(0);
+      const queries = payload.queries || [];
+      const firstSuccessful = queries.findIndex((result) => !resultHasError(result));
+      setResults(queries);
+      setSelectedResult(firstSuccessful === -1 ? 0 : firstSuccessful);
       setActiveTab("targets");
     }
   });
@@ -488,7 +486,9 @@ function BatchPreview({ rows }) {
         {rows.map((row) => (
           <div className="batch-row" key={`${row.lig_id}-${row.smiles}`}>
             <div className="batch-structure">
-              {row.preview?.state === "valid" ? <div dangerouslySetInnerHTML={{ __html: row.preview.svg }} /> : <span>No structure</span>}
+              {row.preview?.state === "valid" && <div dangerouslySetInnerHTML={{ __html: row.preview.svg }} />}
+              {row.preview?.state === "invalid" && <span>Invalid SMILES</span>}
+              {row.preview?.state !== "valid" && row.preview?.state !== "invalid" && <span>No structure</span>}
             </div>
             <div>
               <strong>{row.lig_id}</strong>
@@ -502,6 +502,9 @@ function BatchPreview({ rows }) {
 }
 
 function ResultsPanel({ results, currentResult, selectedResult, setSelectedResult, activeTab, setActiveTab }) {
+  const currentFailed = resultHasError(currentResult);
+  const failedResults = results.filter(resultHasError);
+  const allResultsFailed = failedResults.length > 0 && failedResults.length === results.length;
   const rows = activeTab === "targets" ? currentResult?.predicted_targets || [] : currentResult?.similarity_search_results || [];
   const columns = activeTab === "targets"
     ? ["rank", "protein_id", "protein_description", "domain_id", "domain_tag", "reference_ligand_id", "reference_ligand_score"]
@@ -520,7 +523,9 @@ function ResultsPanel({ results, currentResult, selectedResult, setSelectedResul
           <div className="select-wrap compact">
             <select value={selectedResult} onChange={(event) => setSelectedResult(Number(event.target.value))}>
               {results.map((result, index) => (
-                <option key={result.safe_id} value={index}>{result.ligand_id}</option>
+                <option key={result.safe_id} value={index}>
+                  {result.ligand_id}{resultHasError(result) ? " (error)" : ""}
+                </option>
               ))}
             </select>
             <ChevronDown size={16} />
@@ -528,53 +533,78 @@ function ResultsPanel({ results, currentResult, selectedResult, setSelectedResul
         )}
       </div>
 
-      <div className="result-summary">
+      {failedResults.length > 0 && (
+        <Alert
+          tone="error"
+          text={
+            allResultsFailed
+              ? `${failedResults.length === 1 ? "The compound" : "All compounds"} failed.`
+              : `${failedResults.length} compound${failedResults.length === 1 ? "" : "s"} failed. Successful compounds are still shown.`
+          }
+        />
+      )}
+
+      <div className={cx("result-summary", currentFailed && "error")}>
         {currentResult?.query_svg && <div className="query-structure" dangerouslySetInnerHTML={{ __html: currentResult.query_svg }} />}
         <div>
           <strong>{currentResult?.smiles}</strong>
-          <span>{currentResult?.predicted_targets?.length || 0} target rows · {currentResult?.similarity_search_results?.length || 0} ligand hits</span>
+          <span>
+            {currentFailed
+              ? "Search failed for this compound"
+              : `${currentResult?.predicted_targets?.length || 0} target rows · ${currentResult?.similarity_search_results?.length || 0} ligand hits`}
+          </span>
         </div>
       </div>
 
-      <div className="tabs">
-        <button className={cx(activeTab === "targets" && "active")} onClick={() => setActiveTab("targets")}>Predicted Targets</button>
-        <button className={cx(activeTab === "similarity" && "active")} onClick={() => setActiveTab("similarity")}>Similarity Search</button>
-      </div>
+      {currentFailed ? (
+        <Alert tone="error" text={`${currentResult?.ligand_id || "Query"}: ${currentResult?.error || "Search failed"}`} />
+      ) : (
+        <>
+          <div className="tabs">
+            <button className={cx(activeTab === "targets" && "active")} onClick={() => setActiveTab("targets")}>Predicted Targets</button>
+            <button className={cx(activeTab === "similarity" && "active")} onClick={() => setActiveTab("similarity")}>Similarity Search</button>
+          </div>
 
-      <div className="export-row">
-        <button
-          type="button"
-          className="secondary-action"
-          onClick={() => downloadCsv(
-            `${safeFilePart(currentResult?.ligand_id || "query")}_predicted_targets.csv`,
-            currentResult?.predicted_targets || [],
-            targetExportColumns,
-          )}
-        >
-          <Download size={16} />
-          Export Predicted Targets
-        </button>
-        <button
-          type="button"
-          className="secondary-action"
-          onClick={() => downloadCsv(
-            `${safeFilePart(currentResult?.ligand_id || "query")}_similarity_search_results.csv`,
-            currentResult?.similarity_search_results || [],
-            similarityExportColumns,
-          )}
-        >
-          <Download size={16} />
-          Export Similarity Search
-        </button>
-      </div>
+          <div className="export-row">
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => downloadCsv(
+                `${safeFilePart(currentResult?.ligand_id || "query")}_predicted_targets.csv`,
+                currentResult?.predicted_targets || [],
+                targetExportColumns,
+              )}
+            >
+              <Download size={16} />
+              Export Predicted Targets
+            </button>
+            <button
+              type="button"
+              className="secondary-action"
+              onClick={() => downloadCsv(
+                `${safeFilePart(currentResult?.ligand_id || "query")}_similarity_search_results.csv`,
+                currentResult?.similarity_search_results || [],
+                similarityExportColumns,
+              )}
+            >
+              <Download size={16} />
+              Export Similarity Search
+            </button>
+          </div>
 
-      <DataTable
-        rows={rows}
-        columns={columns}
-        columnTooltips={activeTab === "targets" ? PREDICTED_TARGET_TOOLTIPS : {}}
-      />
+          <DataTable
+            rows={rows}
+            columns={columns}
+            columnTooltips={activeTab === "targets" ? PREDICTED_TARGET_TOOLTIPS : {}}
+          />
+        </>
+      )}
     </section>
   );
+}
+
+function resultHasError(result) {
+  return Boolean(result?.error || result?.status === "error");
 }
 
 function DataTable({ rows, columns, columnTooltips = {} }) {

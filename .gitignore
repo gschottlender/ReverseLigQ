@@ -20,6 +20,8 @@ __pycache__/
 #  CSV files (downloaded from HuggingFace)
 # ============================
 *.csv
+!example_queries.csv
+!example_queries_rare_drugs.csv
 
 # ============================
 #  Pickle files
