@@ -104,19 +104,15 @@ function App() {
       <aside className="sidebar">
         <div className="brand">
           <img src="/api/assets/logo" alt="ReverseLigQ logo" />
-          <div>
-            <strong>ReverseLigQ</strong>
-            <span>Target discovery</span>
-          </div>
         </div>
         <nav className="nav">
-          <button className={cx(screen === "search" && "active")} onClick={() => setScreen("search")}>
+          <button className={cx(screen === "search" && "active")} onClick={() => setScreen("search")} aria-label="Target Search">
             <Search size={18} />
-            Target Search
+            <span className="nav-label">Target Search</span>
           </button>
-          <button className={cx(screen === "upload" && "active")} onClick={() => setScreen("upload")}>
+          <button className={cx(screen === "upload" && "active")} onClick={() => setScreen("upload")} aria-label="Proteome Upload">
             <Upload size={18} />
-            Proteome Upload
+            <span className="nav-label">Proteome Upload</span>
           </button>
         </nav>
       </aside>
