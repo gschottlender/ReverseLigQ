@@ -17,6 +17,7 @@ Public datasets are downloaded automatically when needed and are stored under
 ## Contents
 
 - [Quick Start](#quick-start)
+- [Graphical Frontend Preview](#graphical-frontend-preview)
 - [Using the Graphical Frontend](#using-the-graphical-frontend)
 - [Input Files](#input-files)
 - [Result Tables](#result-tables)
@@ -128,6 +129,24 @@ To stop the local frontend, press `Ctrl+C` in both terminals:
 
 - the backend terminal running `uvicorn`,
 - the frontend terminal running `npm run dev`.
+
+---
+
+## Graphical Frontend Preview
+
+Representative screenshots using example inputs.
+
+### Target Search
+
+![ReverseLigQ target search screen](docs/images/frontend-target-search.png)
+
+### Search Results
+
+![ReverseLigQ search results table](docs/images/frontend-results.png)
+
+### Proteome Upload
+
+![ReverseLigQ proteome upload screen](docs/images/frontend-proteome-upload.png)
 
 ---
 
