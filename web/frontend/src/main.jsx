@@ -30,6 +30,8 @@ const SEARCH_TYPES = {
   },
 };
 
+const DEFAULT_ORGANISM_ID = "3";
+
 const PREDICTED_TARGET_TOOLTIPS = {
   protein_id: "Protein identifier for the candidate target. For preloaded organisms, this opens a UniProt search for the identifier; uploaded proteomes keep the identifier exactly as provided.",
   domain_id: "Pfam protein domain associated with the candidate target. ReverseLigQ uses this domain as the evidence bridge between similar known ligands and proteins in the selected organism, and the link opens the corresponding InterPro Pfam entry.",
@@ -154,8 +156,8 @@ function AppFooter() {
 }
 
 function SearchScreen({ organisms }) {
-  const defaultOrganism = organisms.find((org) => org.id === "13") || organisms[0];
-  const [organismId, setOrganismId] = useState(defaultOrganism?.id || "13");
+  const defaultOrganism = organisms.find((org) => org.id === DEFAULT_ORGANISM_ID) || organisms[0];
+  const [organismId, setOrganismId] = useState(defaultOrganism?.id || DEFAULT_ORGANISM_ID);
   const [queryMode, setQueryMode] = useState("single");
   const [smiles, setSmiles] = useState("CC(=O)OC1=CC=CC=C1C(=O)O");
   const [csvFile, setCsvFile] = useState(null);
@@ -186,7 +188,7 @@ function SearchScreen({ organisms }) {
   });
 
   useEffect(() => {
-    const next = organisms.find((org) => org.id === "13") || organisms[0];
+    const next = organisms.find((org) => org.id === DEFAULT_ORGANISM_ID) || organisms[0];
     if (next && !organisms.some((org) => org.id === organismId)) {
       setOrganismId(next.id);
     }
