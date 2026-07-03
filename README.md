@@ -248,6 +248,11 @@ Important columns include:
 - `possible`: the reference ligand binds a multi-domain protein, but the exact
   binding domain is not resolved.
 
+In the Graphical Frontend, `protein_id` values from built-in organisms link to a
+UniProt search for that identifier. Uploaded proteomes keep protein identifiers
+as plain text because their IDs may not be UniProt accessions. `domain_id`
+values link to the corresponding InterPro Pfam entry.
+
 ### `similarity_search_results.csv`
 
 Ligands similar to the query compound, together with their scores and associated

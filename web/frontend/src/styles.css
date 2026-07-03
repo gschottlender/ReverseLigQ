@@ -700,6 +700,19 @@ td {
   overflow-wrap: anywhere;
 }
 
+.table-link {
+  color: var(--primary);
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.table-link:hover,
+.table-link:focus-visible {
+  color: var(--primary-dark);
+}
+
 .empty-cell {
   text-align: center;
   color: var(--muted);
