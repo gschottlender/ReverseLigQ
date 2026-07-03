@@ -31,7 +31,8 @@ const SEARCH_TYPES = {
 };
 
 const PREDICTED_TARGET_TOOLTIPS = {
-  domain_id: "Pfam protein domain associated with the candidate target. ReverseLigQ uses this domain as the evidence bridge between similar known ligands and proteins in the selected organism.",
+  protein_id: "Protein identifier for the candidate target. For preloaded organisms, this opens a UniProt search for the identifier; uploaded proteomes keep the identifier exactly as provided.",
+  domain_id: "Pfam protein domain associated with the candidate target. ReverseLigQ uses this domain as the evidence bridge between similar known ligands and proteins in the selected organism, and the link opens the corresponding InterPro Pfam entry.",
   domain_tag: "Evidence type for the ligand-domain link. Curated means experimentally supported domain evidence; possible means the reference ligand binds a multi-domain protein but the exact binding domain is not resolved.",
   reference_ligand_id: "Known ligand from the ReverseLigQ reference data that is chemically similar to your query and connects this prediction to the reported domain evidence.",
   reference_ligand_score: "Similarity score between your query ligand and the reference ligand under the selected search method. Higher values indicate closer chemical similarity.",
@@ -166,6 +167,7 @@ function SearchScreen({ organisms }) {
   const [moleculePreview, setMoleculePreview] = useState({ state: "idle" });
   const [jobId, setJobId] = useState(null);
   const [results, setResults] = useState(null);
+  const [resultContext, setResultContext] = useState({ uploadedOrganism: false });
   const [selectedResult, setSelectedResult] = useState(0);
   const [activeTab, setActiveTab] = useState("targets");
   const [submitError, setSubmitError] = useState(null);
@@ -177,6 +179,7 @@ function SearchScreen({ organisms }) {
       const queries = payload.queries || [];
       const firstSuccessful = queries.findIndex((result) => !resultHasError(result));
       setResults(queries);
+      setResultContext({ uploadedOrganism: Boolean(doneJob.metadata?.uploaded_organism) });
       setSelectedResult(firstSuccessful === -1 ? 0 : firstSuccessful);
       setActiveTab("targets");
     }
@@ -375,6 +378,7 @@ function SearchScreen({ organisms }) {
           setSelectedResult={setSelectedResult}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
+          isUploadedOrganism={resultContext.uploadedOrganism}
         />
       )}
     </section>
@@ -528,7 +532,7 @@ function BatchPreview({ rows }) {
   );
 }
 
-function ResultsPanel({ results, currentResult, selectedResult, setSelectedResult, activeTab, setActiveTab }) {
+function ResultsPanel({ results, currentResult, selectedResult, setSelectedResult, activeTab, setActiveTab, isUploadedOrganism }) {
   const currentFailed = resultHasError(currentResult);
   const failedResults = results.filter(resultHasError);
   const allResultsFailed = failedResults.length > 0 && failedResults.length === results.length;
@@ -623,6 +627,8 @@ function ResultsPanel({ results, currentResult, selectedResult, setSelectedResul
             rows={rows}
             columns={columns}
             columnTooltips={activeTab === "targets" ? PREDICTED_TARGET_TOOLTIPS : {}}
+            linkProteinIds={activeTab === "targets" && !isUploadedOrganism}
+            linkDomainIds={activeTab === "targets"}
           />
         </>
       )}
@@ -634,7 +640,7 @@ function resultHasError(result) {
   return Boolean(result?.error || result?.status === "error");
 }
 
-function DataTable({ rows, columns, columnTooltips = {} }) {
+function DataTable({ rows, columns, columnTooltips = {}, linkProteinIds = false, linkDomainIds = false }) {
   return (
     <div className="table-wrap">
       <table>
@@ -660,7 +666,7 @@ function DataTable({ rows, columns, columnTooltips = {} }) {
                   {column === "structure_svg" && row[column] ? (
                     <div className="table-structure" dangerouslySetInnerHTML={{ __html: row[column] }} />
                   ) : (
-                    formatCell(row[column])
+                    formatTableCell(row[column], column, { linkProteinIds, linkDomainIds })
                   )}
                 </td>
               ))}
@@ -697,6 +703,38 @@ function formatCell(value) {
   if (value === null || value === undefined || value === "") return <span className="muted">-</span>;
   if (typeof value === "number") return Number.isInteger(value) ? value : value.toFixed(4);
   return String(value);
+}
+
+function formatTableCell(value, column, options = {}) {
+  if (column === "protein_id" && options.linkProteinIds) {
+    return <ExternalTableLink href={uniprotSearchUrl(value)} value={value} label="Open protein in UniProt" />;
+  }
+  if (column === "domain_id" && options.linkDomainIds) {
+    return <ExternalTableLink href={interproPfamUrl(value)} value={value} label="Open domain in InterPro" />;
+  }
+  return formatCell(value);
+}
+
+function ExternalTableLink({ href, value, label }) {
+  if (!href) return formatCell(value);
+  return (
+    <a className="table-link" href={href} target="_blank" rel="noreferrer" aria-label={`${label}: ${value}`}>
+      {formatCell(value)}
+    </a>
+  );
+}
+
+function uniprotSearchUrl(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  return `https://www.uniprot.org/uniprotkb?query=${encodeURIComponent(text)}`;
+}
+
+function interproPfamUrl(value) {
+  const text = String(value ?? "").trim();
+  const match = text.match(/PF\d{5}/i);
+  if (!match) return null;
+  return `https://www.ebi.ac.uk/interpro/entry/pfam/${match[0].toUpperCase()}/`;
 }
 
 function downloadCsv(filename, rows, columns) {
