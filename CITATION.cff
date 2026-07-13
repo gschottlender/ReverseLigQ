@@ -1,0 +1,56 @@
+cff-version: 1.2.0
+message: >
+  If you use ReverseLigQ or its datasets, please cite the associated research
+  article listed under preferred-citation.
+title: "ReverseLigQ"
+type: software
+version: "1.0.0"
+date-released: "2026-07-13"
+authors:
+  - family-names: "Schottlender"
+    given-names: "Gustavo"
+    email: "gustavoschottlender@gmail.com"
+repository-code: "https://github.com/gschottlender/ReverseLigQ"
+url: "https://github.com/gschottlender/ReverseLigQ"
+license: MIT
+abstract: >
+  ReverseLigQ is an open-source software platform for ligand-driven protein
+  target discovery. It predicts candidate protein targets for query ligands by
+  searching for chemically similar compounds with known protein-domain evidence
+  and supports both built-in organisms and user-uploaded proteomes.
+keywords:
+  - drug target prediction
+  - reverse virtual screening
+  - cheminformatics
+  - chemical similarity
+  - protein domains
+  - bioinformatics
+preferred-citation:
+  type: article
+  title: "From drugs to targets: Reverse engineering the virtual screening process on a proteomic scale"
+  authors:
+    - family-names: "Schottlender"
+      given-names: "Gustavo"
+    - family-names: "Prieto"
+      given-names: "Juan Manuel"
+    - family-names: "Palumbo"
+      given-names: "Miranda Clara"
+    - family-names: "Castello"
+      given-names: "Florencia A."
+    - family-names: "Serral"
+      given-names: "Federico"
+    - family-names: "Sosa"
+      given-names: "Ezequiel J."
+    - family-names: "Turjanski"
+      given-names: "Adrián G."
+    - family-names: "Martí"
+      given-names: "Marcelo A."
+    - family-names: "Fernández Do Porto"
+      given-names: "Darío"
+  journal: "Frontiers in Drug Discovery"
+  volume: 2
+  year: 2022
+  date-published: "2022-10-20"
+  start: "969983"
+  doi: "10.3389/fddsv.2022.969983"
+  url: "https://www.frontiersin.org/journals/drug-discovery/articles/10.3389/fddsv.2022.969983/full"
