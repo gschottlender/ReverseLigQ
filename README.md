@@ -575,10 +575,7 @@ AG, Martí MA and Fernández Do Porto D (2022). *From drugs to targets: Reverse
 engineering the virtual screening process on a proteomic scale.* Frontiers in
 Drug Discovery 2:969983. doi: [10.3389/fddsv.2022.969983](https://doi.org/10.3389/fddsv.2022.969983)
 
-Article link:
-<https://www.frontiersin.org/journals/drug-discovery/articles/10.3389/fddsv.2022.969983/full>
-
-Archived software release:
+#### Archived software release:
 
 ReverseLigQ v1.0.0.
 https://doi.org/10.5281/zenodo.21340238
